@@ -50,13 +50,13 @@ def send_command(device: hid.device, data: bytes) -> None:
     """Send a feature report and do the GET_REPORT handshake + delay."""
     # hidapi expects report_id as first byte; 0x00 = default
     report = b"\x00" + data
-    device.send_feature_report(report)
+    _ = device.send_feature_report(report)
 
-    # GET_REPORT handshake (response is discarded; errors are non-fatal)
+    # GET_REPORT handshake (response is discarded; STALLs are expected)
     try:
-        device.get_feature_report(0x00, 65)
-    except Exception:  # noqa: BLE001
-        logger.debug("GET_REPORT handshake failed (expected for some commands)")
+        _ = device.get_feature_report(0x00, 65)
+    except OSError:
+        logger.debug("GET_REPORT handshake STALL (expected for some commands)")
 
     time.sleep(FW_DELAY)
 

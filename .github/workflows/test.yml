@@ -12,9 +12,6 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  REPORTS_DIR: .reports
-
 jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
@@ -25,10 +22,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13", "3.14"]
+        python-version: ["3.14"]
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
@@ -36,67 +33,37 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v4.2.0
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v4.2.0
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
 
       - run: uv sync --frozen --dev
 
-      - name: Run pytest with JUnit + coverage XML
-        id: pytest
-        run: |
-          mkdir -p "${REPORTS_DIR}/test"
-          set +e
-          uv run pytest tests/ -v 2>&1 | tee "${REPORTS_DIR}/test/pytest.log"
-          echo "exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
-        continue-on-error: true
+      - name: Restore meson builddir
+        id: meson-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            builddir/build.ninja
+            builddir/meson-private/
+            builddir/meson-info/
+          key: meson-builddir-${{ runner.os }}-${{ github.sha }}-${{ hashFiles('meson.build') }}
 
-      - name: Write test summary
-        if: always()
-        run: |
-          {
-            echo "## Test results (Python ${{ matrix.python-version }})"
-            echo ""
-            if [ -f "${REPORTS_DIR}/test/test-results.xml" ]; then
-              total=$(grep -oP 'tests="\K[0-9]+' "${REPORTS_DIR}/test/test-results.xml" | head -1)
-              failures=$(grep -oP 'failures="\K[0-9]+' "${REPORTS_DIR}/test/test-results.xml" | head -1)
-              errors=$(grep -oP 'errors="\K[0-9]+' "${REPORTS_DIR}/test/test-results.xml" | head -1)
-              skipped=$(grep -oP 'skipped="\K[0-9]+' "${REPORTS_DIR}/test/test-results.xml" | head -1)
-              total=${total:-0}; failures=${failures:-0}; errors=${errors:-0}; skipped=${skipped:-0}
-              passed=$((total - failures - errors - skipped))
-              echo "| Total | Passed | Failed | Errors | Skipped |"
-              echo "|---|---|---|---|---|"
-              echo "| $total | $passed | $failures | $errors | $skipped |"
-            fi
-            echo ""
-            if [ -f "${REPORTS_DIR}/test/coverage.xml" ]; then
-              line_rate=$(grep -oP 'line-rate="\K[0-9.]+' "${REPORTS_DIR}/test/coverage.xml" | head -1)
-              branch_rate=$(grep -oP 'branch-rate="\K[0-9.]+' "${REPORTS_DIR}/test/coverage.xml" | head -1)
-              line_rate=${line_rate:-0}; branch_rate=${branch_rate:-0}
-              line_pct=$(awk "BEGIN {printf \"%.2f\", $line_rate * 100}")
-              branch_pct=$(awk "BEGIN {printf \"%.2f\", $branch_rate * 100}")
-              echo "### Coverage"
-              echo ""
-              echo "- Lines: **${line_pct}%**"
-              echo "- Branches: **${branch_pct}%**"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Setup meson
+        if: steps.meson-cache.outputs.cache-hit != 'true'
+        run: uv run meson setup builddir
 
-      - name: Copy .coverage into reports dir
-        if: always()
-        run: cp .coverage "${REPORTS_DIR}/test/.coverage" 2>/dev/null || true
+      - name: Run tests
+        run: uv run ninja -C builddir pytest-junit.xml
 
       - name: Upload test + coverage artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-${{ matrix.python-version }}
-          path: .reports/test/
+          path: |
+            builddir/pytest-junit.xml
+            builddir/pytest.log
+            builddir/coverage.xml
           retention-days: 14
-
-      - name: Fail if tests did not pass
-        if: steps.pytest.outputs.exit != '0' || steps.pytest.outcome == 'failure'
-        run: |
-          echo "pytest reported failures -- see test-results artifact and PR check."
-          exit 1

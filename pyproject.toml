@@ -43,6 +43,13 @@ dev = [
     "pre-commit>=4.0",
     "ossguard>=0.1.4",
     "zensical>=0.0.41",
+    "meson-python>=0.19.0",
+    "meson>=1.11.1",
+    "ninja>=1.13.0",
+    "mypy>=2.1.0",
+    "basedpyright>=1.39.4",
+    "mutmut>=3.5.0",
+    "hypothesis>=6.152.6",
 ]
 
 [build-system]
@@ -119,7 +126,23 @@ indent-style = "space"
 
 [tool.ty.environment]
 python-version = "3.14"
-extra-paths = ["src/ak820ctl/_stubs"]
+extra-paths = ["stubs"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+mypy_path = "stubs"
+
+[[tool.mypy.overrides]]
+module = "hid"
+ignore_missing_imports = true
+
+[tool.basedpyright]
+pythonVersion = "3.14"
+typeCheckingMode = "recommended"
+extraPaths = ["stubs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

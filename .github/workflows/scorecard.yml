@@ -15,13 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      security-events: write  # upload SARIF
-      id-token: write         # OIDC for publish_results
+      security-events: write
+      id-token: write
       contents: read
       actions: read
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
@@ -35,13 +35,6 @@ jobs:
           results_file: scorecard-results.sarif
           results_format: sarif
           publish_results: true
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: scorecard-results
-          path: scorecard-results.sarif
-          retention-days: 7
 
       - name: Upload to code scanning
         uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v3.27.5

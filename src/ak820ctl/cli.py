@@ -172,7 +172,7 @@ def info() -> None:
     try:
         path = find_device()
         console.print(f"[green]Found AK820:[/] VID={VID:#06x} PID={PID:#06x}")
-        console.print(f"[dim]Device path:[/] {path}")
+        console.print(f"[dim]Device path:[/] {path!r}")
         version = get_firmware_version()
         console.print(f"[dim]Firmware:[/] v{version}")
     except RuntimeError as e:

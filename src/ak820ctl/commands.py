@@ -122,19 +122,24 @@ def set_lighting(  # noqa: PLR0913
     try:
         session_start(device)
 
+        # Step 1: CMD_LIGHTING preamble (0x13), arg2=0x01 means data follows
+        preamble = make_packet(REPORT_ID, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)
+        send_command(device, preamble)
+
+        # Step 2: Lighting data payload (report ID = mode, NOT 0x04)
         buf = bytearray(PACKET_SIZE)
-        buf[0] = REPORT_ID
-        buf[1] = 0x13  # CMD_LIGHT
-        buf[2] = mode_val
-        buf[3] = r
-        buf[4] = g
-        buf[5] = b
-        buf[10] = int(rainbow)
-        buf[11] = min(brightness, 5)
-        buf[12] = min(speed, 5)
-        buf[13] = dir_val
-        buf[16] = 0x55
-        buf[17] = 0xAA
+        buf[0] = mode_val
+        buf[1] = r
+        buf[2] = g
+        buf[3] = b
+        # bytes 4-7: reserved (zero)
+        buf[8] = int(rainbow)
+        buf[9] = min(brightness, 5)
+        buf[10] = min(speed, 5)
+        buf[11] = dir_val
+        # bytes 12-61: padding (zero)
+        buf[62] = 0x55  # delimiter
+        buf[63] = 0xAA
         send_command(device, bytes(buf))
 
         session_save(device)
@@ -184,7 +189,7 @@ def get_firmware_version(device: hid.device | None = None) -> str:
         try:
             buf = device.get_feature_report(0x00, 65)
             major, minor, patch = buf[2], buf[3], buf[4]
-        except Exception:  # noqa: BLE001
+        except OSError:
             return "unknown"
         else:
             return f"{major}.{minor}.{patch}"

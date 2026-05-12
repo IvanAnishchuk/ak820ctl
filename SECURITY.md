@@ -1,61 +1,64 @@
 # Security Policy
 
-## Supported Versions
-
-Only the latest release receives security fixes.
-
-| Version | Supported |
-|---------|-----------|
-| latest  | yes       |
-| older   | no        |
-
 ## Reporting a Vulnerability
 
-**Please do not file public GitHub issues for security vulnerabilities.**
+The ak820ctl team takes security vulnerabilities seriously. We appreciate
+your efforts to responsibly disclose your findings.
 
-Report privately via one of the following channels:
+**Please DO NOT file a public issue for security vulnerabilities.**
 
-1. **GitHub Private Vulnerability Reporting**
-   Use the "Report a vulnerability" button on the
-   [Security tab](https://github.com/IvanAnishchuk/ak820ctl/security/advisories/new).
+### How to Report
 
-2. **Email**
-   Send to ``.
+- **Email**: [REPLACE_WITH_SECURITY_EMAIL]
+- **GitHub Security Advisories**: Use [GitHub's private vulnerability reporting](https://github.com/OWNER/ak820ctl/security/advisories/new) to report a vulnerability directly.
 
-Please include:
+### What to Include
 
-- A description of the issue and its impact
-- Steps to reproduce (proof-of-concept if possible)
-- Affected versions
-- Your name and affiliation (optional, for credit)
+Please include the following information in your report:
 
-## Response SLA
+- **Description** of the vulnerability
+- **Steps to reproduce** the issue
+- **Impact** assessment (what an attacker could achieve)
+- **Affected versions**
+- **Suggested fix** (if you have one)
 
-- **Triage**: within 7 days of report
-- **Fix + advisory**: within 90 days for high/critical issues
+### Response Timeline
 
-## Verifying Releases
+- **Acknowledgment**: We will acknowledge receipt of your report within **48 hours**.
+- **Assessment**: We will provide an initial assessment within **1 week**.
+- **Fix & Disclosure**: We aim to release a fix within **90 days** of the report, following [coordinated vulnerability disclosure](https://github.com/ossf/oss-vulnerability-guide) practices.
 
-All releases are:
+### Coordinated Disclosure
 
-- Built by GitHub Actions from a tagged commit
-- Published to PyPI via **trusted publishing (OIDC)**
-- **Signed with sigstore** (keyless signing)
-- Accompanied by a **CycloneDX SBOM**
+We follow the [OpenSSF Vulnerability Disclosure Guide](https://github.com/ossf/oss-vulnerability-guide)
+for coordinated disclosure. We request that you:
 
-```sh
-# Verify sigstore signature
-uv tool run sigstore verify identity \
-    --cert-identity-regexp '^https://github\.com/IvanAnishchuk/ak820ctl/\.github/workflows/release\.yml@' \
-    --cert-oidc-issuer 'https://token.actions.githubusercontent.com' \
-    --bundle ak820ctl-*.whl.sigstore \
-    ak820ctl-*.whl
+- Allow us reasonable time to fix the issue before public disclosure.
+- Make a good faith effort to avoid privacy violations, data destruction, and
+  service disruption.
+- Do not exploit the vulnerability beyond what is necessary to confirm it.
 
-# Verify GitHub attestation
-gh attestation verify ak820ctl-*.whl --owner IvanAnishchuk
-```
+## Supported Versions
 
-## Safe Harbor
+| Version | Supported          |
+| ------- | ------------------ |
+| latest  | :white_check_mark: |
 
-We support responsible security research. Good-faith efforts to discover
-and report vulnerabilities will not be met with legal action.
+## Security Updates
+
+Security updates will be released as patch versions and announced via:
+- [GitHub Security Advisories](https://github.com/OWNER/ak820ctl/security/advisories)
+- Release notes
+
+## Security Best Practices
+
+This project follows [OpenSSF Best Practices](https://www.bestpractices.dev/) and uses:
+- [OpenSSF Scorecard](https://scorecard.dev/) for automated security assessment
+- Dependency scanning via Dependabot/Renovate
+- Code scanning via CodeQL or equivalent
+- Signed releases via Sigstore
+
+## Acknowledgments
+
+We gratefully acknowledge security researchers who help keep ak820ctl safe.
+Contributors will be credited in security advisories (unless anonymity is requested).

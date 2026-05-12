@@ -1,8 +1,21 @@
 """Type stubs for the hidapi (hid) C extension module."""
 
-from typing import Any
+from typing import TypedDict
 
-def enumerate(vendor_id: int = 0, product_id: int = 0) -> list[dict[str, Any]]: ...
+class DeviceInfo(TypedDict):
+    path: bytes
+    vendor_id: int
+    product_id: int
+    serial_number: str
+    release_number: int
+    manufacturer_string: str
+    product_string: str
+    usage_page: int
+    usage: int
+    interface_number: int
+    bus_type: int
+
+def enumerate(vendor_id: int = 0, product_id: int = 0) -> list[DeviceInfo]: ...
 
 class device:  # noqa: N801 — matches the C extension's actual class name
     def open(self, vendor_id: int, product_id: int) -> None: ...
