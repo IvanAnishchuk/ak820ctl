@@ -97,6 +97,7 @@ select = [
     "S607",    # partial executable path in test setup
     "BLE001",  # broad Exception in test fixtures
     "T20",     # print is useful in test debugging
+    "PLR2004", # magic values are expected in protocol tests
 ]
 "scripts/*" = [
     "S603",    # subprocess args are list literals, not user input
