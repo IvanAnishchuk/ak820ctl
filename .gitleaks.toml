@@ -1,0 +1,16 @@
+# gitleaks configuration for ak820ctl
+# https://github.com/gitleaks/gitleaks
+
+title = "ak820ctl gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow test fixtures and documentation examples"
+paths = [
+    '''tests/.*\.py''',
+    '''docs/.*\.md''',
+    '''CHANGELOG\.md''',
+    '''SECURITY\.md''',
+]
