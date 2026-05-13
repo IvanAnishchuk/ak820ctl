@@ -12,7 +12,8 @@ from ak820ctl import __version__
 from ak820ctl.commands import (
     LIGHT_MODES,
     SLEEP_VALUES,
-    get_firmware_version,
+    get_device_info,
+    read_lighting,
     set_lighting,
     set_sleep,
     sync_time,
@@ -89,7 +90,7 @@ def time(
 
 @app.command()
 def light(
-    mode: Annotated[str, typer.Argument(help="Lighting mode name.")] = "static",
+    mode: Annotated[str | None, typer.Argument(help="Lighting mode name.")] = None,
     color: Annotated[
         str,
         typer.Option("--color", "-c", help="RGB hex color (e.g. ff0000)."),
@@ -110,13 +111,37 @@ def light(
         bool,
         typer.Option("--rainbow", "-r", help="Enable rainbow mode."),
     ] = False,
+    show: Annotated[
+        bool,
+        typer.Option("--show", "-s", help="Read and display current lighting config."),
+    ] = False,
 ) -> None:
-    """Set keyboard lighting mode.
+    """Set or read keyboard lighting mode.
+
+    With no arguments, shows current config (same as --show).
 
     Modes: off, static, breath, spectrum, ripples, flowing, glittering,
     falling, colourful, outward, scrolling, rolling, rotating, explode,
     launch, pulsating, tilt, shuttle, single-on, single-off, custom.
     """
+    if show or mode is None:
+        try:
+            cfg = read_lighting()
+            if not cfg:
+                console.print("[yellow]Could not read lighting config[/]")
+                raise typer.Exit(1)
+            color_hex = f"{cfg['r']:02x}{cfg['g']:02x}{cfg['b']:02x}"
+            console.print(f"[bold]Mode:[/] {cfg['mode']}")
+            console.print(f"[bold]Color:[/] #{color_hex}")
+            console.print(f"[bold]Brightness:[/] {cfg['brightness']}")
+            console.print(f"[bold]Speed:[/] {cfg['speed']}")
+            console.print(f"[bold]Direction:[/] {cfg['direction']}")
+            console.print(f"[bold]Rainbow:[/] {cfg['rainbow']}")
+        except RuntimeError as e:
+            console.print(f"[red]Error:[/] {e}")
+            raise typer.Exit(1) from None
+        return
+
     if mode not in LIGHT_MODES:
         console.print(f"[red]Unknown mode:[/] {mode}")
         console.print(f"Available: {', '.join(LIGHT_MODES)}")
@@ -172,9 +197,11 @@ def info() -> None:
     try:
         path = find_device()
         console.print(f"[green]Found AK820:[/] VID={VID:#06x} PID={PID:#06x}")
-        console.print(f"[dim]Device path:[/] {path!r}")
-        version = get_firmware_version()
-        console.print(f"[dim]Firmware:[/] v{version}")
+        console.print(f"[dim]Device path:[/] {path.decode()}")
+        dev_info = get_device_info()
+        console.print(f"[dim]Firmware:[/] v{dev_info['firmware']}")
+        if "vid" in dev_info:
+            console.print(f"[dim]Device VID/PID:[/] {dev_info['vid']:#06x}/{dev_info['pid']:#06x}")
     except RuntimeError as e:
         console.print(f"[red]Error:[/] {e}")
         raise typer.Exit(1) from None
