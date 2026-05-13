@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -12,13 +13,16 @@ from ak820ctl import __version__
 from ak820ctl.commands import (
     LIGHT_MODES,
     SLEEP_VALUES,
+    dump_settings,
     get_device_info,
     read_lighting,
+    restore_settings,
     set_lighting,
     set_sleep,
     sync_time,
 )
 from ak820ctl.hid import PID, VID, find_device
+from ak820ctl.models import KeyboardDump
 
 app = typer.Typer(
     name="ak820ctl",
@@ -140,16 +144,12 @@ def light(
     if show or (mode is None and defaults):
         try:
             cfg = read_lighting()
-            if not cfg:
-                console.print("[yellow]Could not read lighting config[/]")
-                raise typer.Exit(1)
-            color_hex = f"{cfg['r']:02x}{cfg['g']:02x}{cfg['b']:02x}"
-            console.print(f"[bold]Mode:[/] {cfg['mode']}")
-            console.print(f"[bold]Color:[/] #{color_hex}")
-            console.print(f"[bold]Brightness:[/] {cfg['brightness']}")
-            console.print(f"[bold]Speed:[/] {cfg['speed']}")
-            console.print(f"[bold]Direction:[/] {cfg['direction']}")
-            console.print(f"[bold]Rainbow:[/] {cfg['rainbow']}")
+            console.print(f"[bold]Mode:[/] {cfg.mode}")
+            console.print(f"[bold]Color:[/] #{cfg.r:02x}{cfg.g:02x}{cfg.b:02x}")
+            console.print(f"[bold]Brightness:[/] {cfg.brightness}")
+            console.print(f"[bold]Speed:[/] {cfg.speed}")
+            console.print(f"[bold]Direction:[/] {cfg.direction}")
+            console.print(f"[bold]Rainbow:[/] {cfg.rainbow}")
         except RuntimeError as e:
             console.print(f"[red]Error:[/] {e}")
             raise typer.Exit(1) from None
@@ -216,9 +216,54 @@ def info() -> None:
         console.print(f"[green]Found AK820:[/] VID={VID:#06x} PID={PID:#06x}")
         console.print(f"[dim]Device path:[/] {path.decode(errors='replace')}")
         dev_info = get_device_info()
-        console.print(f"[dim]Firmware:[/] v{dev_info['firmware']}")
-        if "vid" in dev_info:
-            console.print(f"[dim]Device VID/PID:[/] {dev_info['vid']:#06x}/{dev_info['pid']:#06x}")
+        console.print(f"[dim]Firmware:[/] v{dev_info.firmware}")
+        if dev_info.vid:
+            console.print(f"[dim]Device VID/PID:[/] {dev_info.vid:#06x}/{dev_info.pid:#06x}")
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+
+@app.command()
+def dump(
+    output: Annotated[
+        str | None,
+        typer.Option("--output", "-o", help="Output file path. Default: stdout."),
+    ] = None,
+) -> None:
+    """Dump all keyboard settings to JSON."""
+    try:
+        data = dump_settings()
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+    if output:
+        data.save(Path(output))
+        console.print(f"[green]Settings saved to:[/] {output}")
+    else:
+        console.print(data.model_dump_json(indent=2))
+
+
+@app.command()
+def restore(
+    input_file: Annotated[str, typer.Argument(help="JSON file to restore from.")],
+    skip_time: Annotated[
+        bool,
+        typer.Option("--skip-time", help="Don't sync the clock."),
+    ] = False,
+) -> None:
+    """Restore keyboard settings from a JSON dump."""
+    path = Path(input_file)
+    if not path.exists():
+        console.print(f"[red]File not found:[/] {input_file}")
+        raise typer.Exit(1)
+
+    try:
+        data = KeyboardDump.load(path)
+        actions = restore_settings(data, skip_time=skip_time)
+        for action in actions:
+            console.print(f"[green]Restored:[/] {action}")
     except RuntimeError as e:
         console.print(f"[red]Error:[/] {e}")
         raise typer.Exit(1) from None

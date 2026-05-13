@@ -16,6 +16,7 @@ from ak820ctl.hid import (
     session_save,
     session_start,
 )
+from ak820ctl.models import DeviceInfo, KeyboardDump, LightingConfig
 
 if TYPE_CHECKING:
     import hid
@@ -182,7 +183,7 @@ LIGHT_MODE_NAMES = {v: k for k, v in LIGHT_MODES.items()}
 DIRECTION_NAMES = {v: k for k, v in DIRECTIONS.items()}
 
 
-def get_device_info(device: hid.device | None = None) -> dict[str, object]:
+def get_device_info(device: hid.device | None = None) -> DeviceInfo:
     """Query device ID: capabilities, VID, PID, firmware version.
 
     Uses CMD 0x05 which returns the full ID payload.
@@ -201,7 +202,7 @@ def get_device_info(device: hid.device | None = None) -> dict[str, object]:
         send_report(device, make_packet(REPORT_ID, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01))
         packets = read_data(device, count=1)
         if not packets:
-            return {"firmware": "unknown"}
+            return DeviceInfo()
 
         buf = packets[0]
         # hidapi prepends report ID byte at index 0, so offsets are +1 from raw HID
@@ -211,13 +212,13 @@ def get_device_info(device: hid.device | None = None) -> dict[str, object]:
         fw_major = fw_raw >> 8
         fw_minor = fw_raw & 0xFF
 
-        return {
-            "vid": vid,
-            "pid": pid,
-            "firmware": f"{fw_major}.{fw_minor:02d}",
-            "firmware_raw": fw_raw,
-            "capabilities": (buf[1] | (buf[2] << 8)),
-        }
+        return DeviceInfo(
+            vid=vid,
+            pid=pid,
+            firmware=f"{fw_major}.{fw_minor:02d}",
+            firmware_raw=fw_raw,
+            capabilities=buf[1] | (buf[2] << 8),
+        )
     finally:
         if own_device:
             device.close()
@@ -225,11 +226,10 @@ def get_device_info(device: hid.device | None = None) -> dict[str, object]:
 
 def get_firmware_version(device: hid.device | None = None) -> str:
     """Query firmware version (convenience wrapper)."""
-    info = get_device_info(device)
-    return str(info.get("firmware", "unknown"))
+    return get_device_info(device).firmware
 
 
-def read_lighting(device: hid.device | None = None) -> dict[str, object]:
+def read_lighting(device: hid.device | None = None) -> LightingConfig:
     """Read current lighting configuration from the keyboard."""
     own_device = device is None
     if device is None:
@@ -239,22 +239,75 @@ def read_lighting(device: hid.device | None = None) -> dict[str, object]:
         send_report(device, make_packet(REPORT_ID, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01))
         packets = read_data(device, count=1)
         if not packets:
-            return {}
+            return LightingConfig()
 
         buf = packets[0]
         # hidapi prepends report ID byte at index 0, so data starts at index 1
         mode_val = buf[1]
-        return {
-            "mode": LIGHT_MODE_NAMES.get(mode_val, f"0x{mode_val:02x}"),
-            "mode_value": mode_val,
-            "r": buf[2],
-            "g": buf[3],
-            "b": buf[4],
-            "rainbow": bool(buf[9]),
-            "brightness": buf[10],
-            "speed": buf[11],
-            "direction": DIRECTION_NAMES.get(buf[12], str(buf[12])),
-        }
+        return LightingConfig(
+            mode=LIGHT_MODE_NAMES.get(mode_val, f"0x{mode_val:02x}"),
+            mode_value=mode_val,
+            r=buf[2],
+            g=buf[3],
+            b=buf[4],
+            rainbow=bool(buf[9]),
+            brightness=buf[10],
+            speed=buf[11],
+            direction=DIRECTION_NAMES.get(buf[12], str(buf[12])),
+        )
     finally:
         if own_device:
             device.close()
+
+
+def dump_settings(device: hid.device | None = None) -> KeyboardDump:
+    """Read all available settings from the keyboard."""
+    own_device = device is None
+    if device is None:
+        device = open_device()
+
+    try:
+        return KeyboardDump(
+            device=get_device_info(device),
+            lighting=read_lighting(device),
+        )
+    finally:
+        if own_device:
+            device.close()
+
+
+def restore_settings(
+    dump: KeyboardDump,
+    device: hid.device | None = None,
+    *,
+    skip_time: bool = False,
+) -> list[str]:
+    """Apply settings from a dump. Returns list of actions taken."""
+    own_device = device is None
+    if device is None:
+        device = open_device()
+
+    actions: list[str] = []
+    try:
+        cfg = dump.lighting
+        set_lighting(
+            device,
+            mode=cfg.mode,
+            r=cfg.r,
+            g=cfg.g,
+            b=cfg.b,
+            rainbow=cfg.rainbow,
+            brightness=cfg.brightness,
+            speed=cfg.speed,
+            direction=cfg.direction,
+        )
+        actions.append(f"lighting: {cfg.mode}")
+
+        if not skip_time:
+            _ = sync_time(device)
+            actions.append("time: synced")
+    finally:
+        if own_device:
+            device.close()
+
+    return actions
