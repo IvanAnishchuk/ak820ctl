@@ -29,6 +29,10 @@ app = typer.Typer(
 console = Console()
 
 HEX_COLOR_LEN = 6
+DEFAULT_COLOR = "ffffff"
+DEFAULT_BRIGHTNESS = 5
+DEFAULT_SPEED = 3
+DEFAULT_DIRECTION = "left"
 
 
 def version_callback(value: bool) -> None:
@@ -94,19 +98,19 @@ def light(
     color: Annotated[
         str,
         typer.Option("--color", "-c", help="RGB hex color (e.g. ff0000)."),
-    ] = "ffffff",
+    ] = DEFAULT_COLOR,
     brightness: Annotated[
         int,
         typer.Option("--brightness", "-b", help="Brightness 0-5."),
-    ] = 5,
+    ] = DEFAULT_BRIGHTNESS,
     speed: Annotated[
         int,
         typer.Option("--speed", "-S", help="Animation speed 0-5."),
-    ] = 3,
+    ] = DEFAULT_SPEED,
     direction: Annotated[
         str,
         typer.Option("--direction", "-d", help="Direction: left/right/up/down."),
-    ] = "left",
+    ] = DEFAULT_DIRECTION,
     rainbow: Annotated[
         bool,
         typer.Option("--rainbow", "-r", help="Enable rainbow mode."),
@@ -124,7 +128,16 @@ def light(
     falling, colourful, outward, scrolling, rolling, rotating, explode,
     launch, pulsating, tilt, shuttle, single-on, single-off, custom.
     """
-    if show or mode is None:
+    # Only enter show mode if --show was passed, or if no arguments at all
+    # (mode is None and all other options are at their defaults)
+    defaults = (
+        color == DEFAULT_COLOR
+        and brightness == DEFAULT_BRIGHTNESS
+        and speed == DEFAULT_SPEED
+        and direction == DEFAULT_DIRECTION
+        and not rainbow
+    )
+    if show or (mode is None and defaults):
         try:
             cfg = read_lighting()
             if not cfg:
@@ -141,6 +154,10 @@ def light(
             console.print(f"[red]Error:[/] {e}")
             raise typer.Exit(1) from None
         return
+
+    # Default to "static" when options are passed without an explicit mode
+    if mode is None:
+        mode = "static"
 
     if mode not in LIGHT_MODES:
         console.print(f"[red]Unknown mode:[/] {mode}")
@@ -197,7 +214,7 @@ def info() -> None:
     try:
         path = find_device()
         console.print(f"[green]Found AK820:[/] VID={VID:#06x} PID={PID:#06x}")
-        console.print(f"[dim]Device path:[/] {path.decode()}")
+        console.print(f"[dim]Device path:[/] {path.decode(errors='replace')}")
         dev_info = get_device_info()
         console.print(f"[dim]Firmware:[/] v{dev_info['firmware']}")
         if "vid" in dev_info:

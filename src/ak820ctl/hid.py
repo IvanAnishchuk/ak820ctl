@@ -54,7 +54,11 @@ def send_report(device: hid.device, data: bytes) -> None:
 
 
 def send_command(device: hid.device, data: bytes) -> None:
-    """Send a feature report, do the GET_REPORT handshake, and delay."""
+    """Send a feature report, do the GET_REPORT handshake.
+
+    The inter-command delay is handled by send_report(); only one additional
+    delay after the handshake GET_REPORT is needed.
+    """
     send_report(device, data)
 
     # GET_REPORT handshake (response is discarded; STALLs are expected)
@@ -62,8 +66,6 @@ def send_command(device: hid.device, data: bytes) -> None:
         _ = device.get_feature_report(0x00, 65)
     except OSError:
         logger.debug("GET_REPORT handshake STALL (expected for some commands)")
-
-    time.sleep(FW_DELAY)
 
 
 def read_data(device: hid.device, count: int = 1) -> list[list[int]]:

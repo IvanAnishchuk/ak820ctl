@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `light --show` / `light` (no args): read and display current lighting config from keyboard
+- `info` command: show device VID/PID and capabilities from CMD 0x05 response
+- `send_report()`, `read_data()` HID helpers for read operations
 - CLI commands: `time`, `light`, `sleep`, `info`
 - USB HID protocol implementation for Ajazz AK820 (VID 0x0C45, PID 0x8009)
 - Time sync, LED mode control (20 presets + custom), sleep timer
@@ -24,9 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Dependabot regen workflow for requirements*.txt sync
 - Protocol documentation: COMMANDS.md, STATUS.md
 
+### Changed
+
+- `info` command: use CMD 0x05 for full device ID with LE uint16 firmware version (shows V1.20)
+
 ### Fixed
 
 - LED color command: split into preamble + data payload (two-packet sequence)
 - Replaced broad `except Exception` with specific `OSError` for HID errors
 - Fixed firmware version display (`info` command)
+- Eliminated double inter-command delay in `send_command()` (was sleeping in both `send_report()` and `send_command()`)
 - Dependabot regen workflow trigger paths

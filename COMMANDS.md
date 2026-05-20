@@ -90,19 +90,24 @@ Sequence: START → CMD_SLEEP → SAVE
 | `0x02` | 5 minutes |
 | `0x03` | 30 minutes |
 
-### `info` — Device Info (CMD `0x01`)
+### `info` — Device Info (CMD `0x05`)
 
 Queries firmware version and device identity.
 
-**Response payload:**
+```
+Sequence: CMD_READ_ID (arg8=0x01) → discard ACK → read 1 data packet
+```
+
+**Response payload (after hidapi report ID byte at index 0):**
 
 | Bytes | Field |
 |-------|-------|
-| 0–3 | capabilities (`0x3040`) |
-| 4–5 | VID, little-endian |
-| 6–7 | PID, little-endian |
-| 8–9 | firmware version, LE uint16 |
-| 10–11 | end marker (`0xFFFF`) |
+| 1–2 | capabilities, LE uint16 (`0x3040`) |
+| 3–4 | reserved |
+| 5–6 | USB VID, little-endian |
+| 7–8 | USB PID, little-endian |
+| 9–10 | firmware version, LE uint16 (major.minor) |
+| 11–12 | end marker (`0xFFFF`) |
 
 ### Session Control
 
@@ -111,6 +116,30 @@ Queries firmware version and device identity.
 | `0x18` | `CMD_START` | Begin session (arg2=`0x01`) |
 | `0x02` | `CMD_SAVE` | Persist to flash |
 | `0xF0` | `CMD_FINISH` | End transaction (arg2=`0x01`) |
+
+---
+
+### `light --show` — Read Current Lighting Config (CMD `0x12`)
+
+Reads current lighting mode, color, brightness, speed, direction, and rainbow state.
+
+```
+Sequence: CMD_READ_LIGHTING (arg8=0x01) → discard ACK → read 1 data packet
+```
+
+**Response payload (after hidapi report ID byte at index 0):**
+
+| Byte | Field |
+|------|-------|
+| 1 | mode (`0x00`–`0x13`, `0x80`) |
+| 2 | R (0–255) |
+| 3 | G (0–255) |
+| 4 | B (0–255) |
+| 5–8 | reserved |
+| 9 | rainbow (0/1) |
+| 10 | brightness (0–5) |
+| 11 | speed (0–5) |
+| 12 | direction (0=left 1=down 2=up 3=right) |
 
 ---
 
@@ -155,18 +184,6 @@ Sequence: CMD_READ_PERKEY (arg2=0x09) → discard ACK → read 9 × 64-byte pack
 ### Read Stored Per-Key Colors (CMD `0x22`) ⬜
 
 Same as `0xF5` but reads from flash instead of live state.
-
-### Read Current Lighting Config (CMD `0x12`) ⬜
-
-Returns current lighting mode, color, brightness, speed, etc.
-
-```
-Sequence: CMD_READ_LIGHTING (arg2=0x01) → discard ACK → read 1 data packet
-```
-
-**CLI ideas:**
-- `ak820ctl light --show` — display current settings
-- Part of `ak820ctl dump`
 
 ### LCD Image Upload (CMD `0x72`) ⬜
 
