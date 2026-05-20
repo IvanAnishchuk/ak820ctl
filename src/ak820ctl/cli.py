@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import TypeAdapter
 from rich.console import Console
 from rich.progress import Progress
 
@@ -24,7 +26,8 @@ from ak820ctl.commands import (
 )
 from ak820ctl.display import MAX_FRAMES, MAX_SLOT, load_animation, load_image, upload_image
 from ak820ctl.hid import DISPLAY_CHUNK_SIZE, PID, VID, find_device
-from ak820ctl.models import KeyboardDump
+from ak820ctl.models import KeyboardDump, KeyColor
+from ak820ctl.perkey import NUM_KEYS, read_perkey_live, read_perkey_stored, write_perkey
 
 app = typer.Typer(
     name="ak820ctl",
@@ -34,7 +37,6 @@ app = typer.Typer(
 )
 console = Console()
 
-HEX_COLOR_LEN = 6
 DEFAULT_COLOR = "ffffff"
 DEFAULT_BRIGHTNESS = 5
 DEFAULT_SPEED = 3
@@ -167,7 +169,7 @@ def light(
         raise typer.Exit(1)
 
     color_hex = color.lstrip("#")
-    if len(color_hex) != HEX_COLOR_LEN:
+    if len(color_hex) != HEX_RGB_LEN:
         console.print("[red]Color must be 6 hex digits[/] (e.g. ff0000)")
         raise typer.Exit(1)
     r, g, b = int(color_hex[0:2], 16), int(color_hex[2:4], 16), int(color_hex[4:6], 16)
@@ -276,16 +278,16 @@ def _parse_key_spec(spec: str, num_keys: int) -> tuple[int, tuple[int, int, int]
     return idx, _parse_hex_color(color_str)
 
 
-def _load_colors_file(path: Path, num_keys: int) -> list[tuple[int, int, int]]:
-    """Load per-key colors from JSON file."""
-    import json  # noqa: PLC0415
+_KEY_COLOR_LIST_ADAPTER = TypeAdapter(list[KeyColor])
 
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    colors: list[tuple[int, int, int]] = [(0, 0, 0)] * num_keys
-    for entry in raw:
-        idx = entry["index"]
-        colors[idx] = (entry["r"], entry["g"], entry["b"])
-    return colors
+
+def _load_colors_file(path: Path, num_keys: int) -> list[KeyColor]:
+    """Load per-key colors from JSON file, validated via pydantic."""
+    entries = _KEY_COLOR_LIST_ADAPTER.validate_json(path.read_bytes())
+    keys = [KeyColor(index=i) for i in range(num_keys)]
+    for entry in entries:
+        keys[entry.index] = entry
+    return keys
 
 
 @app.command()
@@ -319,55 +321,45 @@ def perkey(
 
     With no options, displays the live per-key state.
     """
-    import json  # noqa: PLC0415
-
-    from ak820ctl.perkey import (  # noqa: PLC0415
-        NUM_KEYS,
-        read_perkey_live,
-        read_perkey_stored,
-        write_perkey,
-    )
-
     # Read modes
     if dump or dump_stored:
         try:
-            colors = read_perkey_stored() if dump_stored else read_perkey_live()
+            keys_data = read_perkey_stored() if dump_stored else read_perkey_live()
         except RuntimeError as e:
             console.print(f"[red]Error:[/] {e}")
             raise typer.Exit(1) from None
-        data = [{"index": i, "r": r, "g": g, "b": b} for i, (r, g, b) in enumerate(colors)]
+        data = [k.model_dump() for k in keys_data]
         console.print(json.dumps(data, indent=2))
         return
 
-    # Build colors list based on mode
-    colors_list: list[tuple[int, int, int]] | None = None
+    # Build keys list based on mode
+    keys_list: list[KeyColor] | None = None
     label = ""
 
     try:
         if all_color is not None:
-            rgb = _parse_hex_color(all_color)
-            colors_list = [rgb] * NUM_KEYS
+            r, g, b = _parse_hex_color(all_color)
+            keys_list = [KeyColor(index=i, r=r, g=g, b=b) for i in range(NUM_KEYS)]
             label = f"All {NUM_KEYS} keys set to #{all_color.lstrip('#')}"
         elif key is not None:
-            current = read_perkey_live()
-            colors_list = list(current)
+            keys_list = list(read_perkey_live())
             for spec in key:
-                idx, rgb = _parse_key_spec(spec, NUM_KEYS)
-                colors_list[idx] = rgb
+                idx, (r, g, b) = _parse_key_spec(spec, NUM_KEYS)
+                keys_list[idx] = KeyColor(index=idx, r=r, g=g, b=b)
             label = f"Updated {len(key)} key(s)"
         elif file is not None:
             if not file.exists():
                 console.print(f"[red]File not found:[/] {file}")
                 raise typer.Exit(1)
-            colors_list = _load_colors_file(file, NUM_KEYS)
+            keys_list = _load_colors_file(file, NUM_KEYS)
             label = f"Loaded per-key colors from {file}"
-    except (ValueError, RuntimeError) as e:
+    except (ValueError, TypeError, RuntimeError) as e:
         console.print(f"[red]Error:[/] {e}")
         raise typer.Exit(1) from None
 
-    if colors_list is not None:
+    if keys_list is not None:
         try:
-            write_perkey(colors_list, brightness=brightness)
+            write_perkey(keys_list, brightness=brightness)
             console.print(f"[green]{label}[/]")
         except RuntimeError as e:
             console.print(f"[red]Error:[/] {e}")
@@ -376,17 +368,17 @@ def perkey(
 
     # Default: show live state
     try:
-        colors = read_perkey_live()
+        keys_data = read_perkey_live()
     except RuntimeError as e:
         console.print(f"[red]Error:[/] {e}")
         raise typer.Exit(1) from None
-    active = [(i, r, g, b) for i, (r, g, b) in enumerate(colors) if r or g or b]
+    active = [k for k in keys_data if k.r or k.g or k.b]
     if not active:
         console.print("[dim]No per-key colors active (all black)[/]")
     else:
         console.print(f"[bold]{len(active)} key(s) with color:[/]")
-        for i, r, g, b in active:
-            console.print(f"  [dim]{i:3d}:[/] #{r:02x}{g:02x}{b:02x}")
+        for k in active:
+            console.print(f"  [dim]{k.index:3d}:[/] #{k.r:02x}{k.g:02x}{k.b:02x}")
 
 
 @app.command()

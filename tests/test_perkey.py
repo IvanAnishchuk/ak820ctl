@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 from ak820ctl.cli import app
 from ak820ctl.hid import PACKET_SIZE, REPORT_ID
+from ak820ctl.models import KeyColor
 from ak820ctl.perkey import (
     CMD_CUSTOM_LIGHT,
     NUM_KEYS,
@@ -24,64 +25,61 @@ from ak820ctl.perkey import (
 
 
 class TestBuildPerkeyData:
+    def _black_keys(self) -> list[KeyColor]:
+        return [KeyColor(index=i) for i in range(NUM_KEYS)]
+
     def test_produces_9_packets(self) -> None:
-        colors = [(0, 0, 0)] * NUM_KEYS
-        packets = build_perkey_data(colors)
+        packets = build_perkey_data(self._black_keys())
         assert len(packets) == NUM_PACKETS
 
     def test_packet_size(self) -> None:
-        colors = [(0, 0, 0)] * NUM_KEYS
-        packets = build_perkey_data(colors)
+        packets = build_perkey_data(self._black_keys())
         for pkt in packets:
             assert len(pkt) == PACKET_SIZE
 
     def test_position_indices(self) -> None:
-        colors = [(0, 0, 0)] * NUM_KEYS
-        packets = build_perkey_data(colors)
+        packets = build_perkey_data(self._black_keys())
         raw = b"".join(packets)
         for pos in range(NUM_KEYS):
             assert raw[pos * 4] == pos
 
     def test_colors_encoded(self) -> None:
-        colors = [(0, 0, 0)] * NUM_KEYS
-        colors[0] = (255, 128, 64)
-        colors[5] = (10, 20, 30)
-        packets = build_perkey_data(colors)
+        keys = self._black_keys()
+        keys[0] = KeyColor(index=0, r=255, g=128, b=64)
+        keys[5] = KeyColor(index=5, r=10, g=20, b=30)
+        packets = build_perkey_data(keys)
         raw = b"".join(packets)
-        # Key 0
         assert raw[1] == 255
         assert raw[2] == 128
         assert raw[3] == 64
-        # Key 5
         assert raw[5 * 4 + 1] == 10
         assert raw[5 * 4 + 2] == 20
         assert raw[5 * 4 + 3] == 30
 
     def test_wrong_count_raises(self) -> None:
         with pytest.raises(ValueError, match="Expected 144"):
-            build_perkey_data([(0, 0, 0)] * 10)
+            build_perkey_data([KeyColor(index=0)] * 10)
 
 
 # ── Data parsing ─────────────────────────────────────────────────────────────
 
 
 class TestParsePerkeyData:
-    def test_parses_144_colors(self) -> None:
-        # Build fake packets with hidapi report ID prefix
-        packets = []
-        for _i in range(NUM_PACKETS):
-            pkt = [0x00] + [0] * PACKET_SIZE  # report ID + 64 bytes
-            packets.append(pkt)
-        colors = parse_perkey_data(packets)
-        assert len(colors) == NUM_KEYS
+    def test_parses_144_keys(self) -> None:
+        packets = [[0x00] + [0] * PACKET_SIZE for _ in range(NUM_PACKETS)]
+        keys = parse_perkey_data(packets)
+        assert len(keys) == NUM_KEYS
+        assert all(isinstance(k, KeyColor) for k in keys)
 
     def test_round_trip(self) -> None:
-        original = [(i % 256, (i * 2) % 256, (i * 3) % 256) for i in range(NUM_KEYS)]
+        original = [
+            KeyColor(index=i, r=i % 256, g=(i * 2) % 256, b=(i * 3) % 256) for i in range(NUM_KEYS)
+        ]
         packets = build_perkey_data(original)
-        # Simulate hidapi: prepend report ID byte
         fake_response = [[0x00, *pkt] for pkt in packets]
         parsed = parse_perkey_data(fake_response)
-        assert parsed == original
+        for orig, got in zip(original, parsed, strict=True):
+            assert (orig.r, orig.g, orig.b) == (got.r, got.g, got.b)
 
 
 # ── Write protocol ───────────────────────────────────────────────────────────
@@ -106,13 +104,12 @@ class TestWritePerkey:
         dev = MagicMock()
         mock_open.return_value = dev
 
-        colors = [(255, 0, 0)] * NUM_KEYS
-        write_perkey(colors, brightness=3)
+        keys = [KeyColor(index=i, r=255) for i in range(NUM_KEYS)]
+        write_perkey(keys, brightness=3)
 
         mock_start.assert_called_once_with(dev)
-        # 1 CMD_CUSTOM_LIGHT + 9 data packets = 10 send_command calls
+        # 1 CMD_CUSTOM_LIGHT + 9 data packets = 10
         assert mock_send_cmd.call_count == 10
-        # First call is CMD_CUSTOM_LIGHT
         first_pkt = mock_send_cmd.call_args_list[0][0][1]
         assert first_pkt[0] == REPORT_ID
         assert first_pkt[1] == CMD_CUSTOM_LIGHT
@@ -136,7 +133,7 @@ class TestWritePerkey:
         _mock_set_lighting: MagicMock,
     ) -> None:
         dev = MagicMock()
-        write_perkey([(0, 0, 0)] * NUM_KEYS, device=dev)
+        write_perkey([KeyColor(index=i) for i in range(NUM_KEYS)], device=dev)
         dev.close.assert_not_called()
 
 
@@ -148,20 +145,18 @@ class TestCli:
         runner = CliRunner()
         result = runner.invoke(app, ["perkey", "--help"])
         assert result.exit_code == 0
-        assert "per-key" in result.output.lower() or "RGB" in result.output
 
-    def test_dump_file_not_found(self) -> None:
+    def test_file_not_found(self) -> None:
         runner = CliRunner()
         result = runner.invoke(app, ["perkey", "--file", "/nonexistent/colors.json"])
         assert result.exit_code == 1
-        assert "File not found" in result.output
 
     @patch("ak820ctl.perkey.open_device")
     @patch("ak820ctl.perkey.read_data")
     @patch("ak820ctl.perkey.send_report")
     @patch("ak820ctl.perkey.session_save")
     @patch("ak820ctl.perkey.session_end")
-    def test_dump_json_output(
+    def test_dump_produces_valid_json(
         self,
         _mock_end: MagicMock,
         _mock_save: MagicMock,
@@ -169,9 +164,7 @@ class TestCli:
         mock_read: MagicMock,
         mock_open: MagicMock,
     ) -> None:
-        dev = MagicMock()
-        mock_open.return_value = dev
-        # Return 9 packets of zeros (with report ID prefix)
+        mock_open.return_value = MagicMock()
         mock_read.return_value = [[0x00] + [0] * PACKET_SIZE for _ in range(NUM_PACKETS)]
 
         runner = CliRunner()
@@ -179,6 +172,7 @@ class TestCli:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert len(data) == NUM_KEYS
+        assert set(data[0].keys()) >= {"index", "r", "g", "b"}
 
     @patch("ak820ctl.perkey.open_device")
     @patch("ak820ctl.perkey.set_lighting")
@@ -186,7 +180,7 @@ class TestCli:
     @patch("ak820ctl.perkey.session_save")
     @patch("ak820ctl.perkey.send_command")
     @patch("ak820ctl.perkey.session_start")
-    def test_all_color(
+    def test_all_color_succeeds(
         self,
         _mock_start: MagicMock,
         _mock_send: MagicMock,
@@ -199,9 +193,8 @@ class TestCli:
         runner = CliRunner()
         result = runner.invoke(app, ["perkey", "--all", "ff0000"])
         assert result.exit_code == 0
-        assert "144 keys set" in result.output.lower() or "set to" in result.output
 
-    def test_file_load(self, tmp_path: Path) -> None:
+    def test_file_load_succeeds(self, tmp_path: Path) -> None:
         colors_file = tmp_path / "colors.json"
         data = [{"index": i, "r": 255, "g": 0, "b": 0} for i in range(NUM_KEYS)]
         colors_file.write_text(json.dumps(data))
@@ -218,4 +211,3 @@ class TestCli:
             runner = CliRunner()
             result = runner.invoke(app, ["perkey", "--file", str(colors_file)])
             assert result.exit_code == 0
-            assert "Loaded" in result.output

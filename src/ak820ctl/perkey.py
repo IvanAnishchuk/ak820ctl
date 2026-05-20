@@ -17,6 +17,7 @@ from ak820ctl.hid import (
     session_save,
     session_start,
 )
+from ak820ctl.models import KeyColor
 
 if TYPE_CHECKING:
     import hid
@@ -24,29 +25,30 @@ if TYPE_CHECKING:
 NUM_KEYS = 144
 NUM_PACKETS = 9
 ENTRY_SIZE = 4  # pos, R, G, B
+MAX_CHANNEL = 255
 
 CMD_CUSTOM_LIGHT = 0x23
 CMD_READ_PERKEY = 0xF5
 CMD_READ_STORED = 0x22
 
 
-def build_perkey_data(colors: list[tuple[int, int, int]]) -> list[bytes]:
-    """Build 9 x 64-byte data packets from a list of 144 (R, G, B) tuples.
+def build_perkey_data(keys: list[KeyColor]) -> list[bytes]:
+    """Build 9 x 64-byte data packets from a list of 144 KeyColor entries.
 
     Each entry is 4 bytes: [position_index, R, G, B].
     Position index equals the entry's position (0-143).
     """
-    if len(colors) != NUM_KEYS:
-        msg = f"Expected {NUM_KEYS} colors, got {len(colors)}"
+    if len(keys) != NUM_KEYS:
+        msg = f"Expected {NUM_KEYS} keys, got {len(keys)}"
         raise ValueError(msg)
 
     buf = bytearray(NUM_KEYS * ENTRY_SIZE)
-    for pos, (r, g, b) in enumerate(colors):
+    for pos, key in enumerate(keys):
         off = pos * ENTRY_SIZE
         buf[off] = pos
-        buf[off + 1] = r & 0xFF
-        buf[off + 2] = g & 0xFF
-        buf[off + 3] = b & 0xFF
+        buf[off + 1] = key.r
+        buf[off + 2] = key.g
+        buf[off + 3] = key.b
 
     packets = []
     for i in range(NUM_PACKETS):
@@ -55,25 +57,25 @@ def build_perkey_data(colors: list[tuple[int, int, int]]) -> list[bytes]:
     return packets
 
 
-def parse_perkey_data(packets: list[list[int]]) -> list[tuple[int, int, int]]:
-    """Parse 9 x 64-byte response packets into 144 (R, G, B) tuples."""
+def parse_perkey_data(packets: list[list[int]]) -> list[KeyColor]:
+    """Parse 9 x 64-byte response packets into 144 KeyColor entries."""
     raw = bytearray()
     for pkt in packets:
         # hidapi prepends report ID byte at index 0
         raw.extend(pkt[1:] if len(pkt) > PACKET_SIZE else pkt)
 
-    colors: list[tuple[int, int, int]] = []
+    keys: list[KeyColor] = []
     for pos in range(NUM_KEYS):
         off = pos * ENTRY_SIZE
         if off + 3 < len(raw):
-            colors.append((raw[off + 1], raw[off + 2], raw[off + 3]))
+            keys.append(KeyColor(index=pos, r=raw[off + 1], g=raw[off + 2], b=raw[off + 3]))
         else:
-            colors.append((0, 0, 0))
-    return colors
+            keys.append(KeyColor(index=pos))
+    return keys
 
 
 def write_perkey(
-    colors: list[tuple[int, int, int]],
+    keys: list[KeyColor],
     *,
     brightness: int = 5,
     device: hid.device | None = None,
@@ -81,11 +83,11 @@ def write_perkey(
     """Upload per-key colors and activate custom lighting mode (0x80).
 
     Args:
-        colors: 144 (R, G, B) tuples, one per key position.
+        keys: 144 KeyColor entries, one per key position.
         brightness: Brightness level 0-5.
         device: HID device. Opened if None.
     """
-    packets = build_perkey_data(colors)
+    packets = build_perkey_data(keys)
 
     own_device = device is None
     if device is None:
@@ -111,7 +113,7 @@ def write_perkey(
             device.close()
 
 
-def read_perkey_live(device: hid.device | None = None) -> list[tuple[int, int, int]]:
+def read_perkey_live(device: hid.device | None = None) -> list[KeyColor]:
     """Read live per-key RGB state (CMD 0xF5). No START needed."""
     own_device = device is None
     if device is None:
@@ -132,7 +134,7 @@ def read_perkey_live(device: hid.device | None = None) -> list[tuple[int, int, i
             device.close()
 
 
-def read_perkey_stored(device: hid.device | None = None) -> list[tuple[int, int, int]]:
+def read_perkey_stored(device: hid.device | None = None) -> list[KeyColor]:
     """Read stored per-key RGB state from flash (CMD 0x22). Needs START."""
     own_device = device is None
     if device is None:
