@@ -98,11 +98,22 @@ def _check_requirements() -> None:
     ok("requirements.txt and requirements-dev.txt are current")
 
 
+VULN_IGNORE_FILE = REPO_ROOT / ".pip-audit-ignore"
+
+
+def _pip_audit_cmd(req_file: Path) -> list[str]:
+    cmd = ["uv", "run", "pip-audit", "--strict", "--desc", "--requirement", str(req_file)]
+    if VULN_IGNORE_FILE.exists():
+        for line in VULN_IGNORE_FILE.read_text().splitlines():
+            vuln_id = line.split("#", 1)[0].strip()
+            if vuln_id:
+                cmd.extend(["--ignore-vuln", vuln_id])
+    return cmd
+
+
 def _audit_deps(n: int, label: str, req_file: Path, log_file: Path) -> None:
     step(n, f"pip-audit on {req_file.name} ({label})")
-    code, out = run_capture(
-        ["uv", "run", "pip-audit", "--strict", "--desc", "--requirement", str(req_file)]
-    )
+    code, out = run_capture(_pip_audit_cmd(req_file))
     log_file.write_text(out, encoding="utf-8")
     if code == 0:
         ok(f"No known vulnerabilities in {label} dependencies")
