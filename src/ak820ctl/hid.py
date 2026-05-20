@@ -46,11 +46,20 @@ def make_packet(*args: int, size: int = PACKET_SIZE) -> bytes:
     return bytes(buf)
 
 
-def send_command(device: hid.device, data: bytes) -> None:
-    """Send a feature report and do the GET_REPORT handshake + delay."""
-    # hidapi expects report_id as first byte; 0x00 = default
+def send_report(device: hid.device, data: bytes) -> None:
+    """Send a feature report with delay. No GET_REPORT handshake."""
     report = b"\x00" + data
     _ = device.send_feature_report(report)
+    time.sleep(FW_DELAY)
+
+
+def send_command(device: hid.device, data: bytes) -> None:
+    """Send a feature report, do the GET_REPORT handshake.
+
+    The inter-command delay is handled by send_report(); only one additional
+    delay after the handshake GET_REPORT is needed.
+    """
+    send_report(device, data)
 
     # GET_REPORT handshake (response is discarded; STALLs are expected)
     try:
@@ -58,7 +67,31 @@ def send_command(device: hid.device, data: bytes) -> None:
     except OSError:
         logger.debug("GET_REPORT handshake STALL (expected for some commands)")
 
+
+def read_data(device: hid.device, count: int = 1) -> list[list[int]]:
+    """Read data packets after a command, discarding the initial ACK.
+
+    The first GET_REPORT after a read command is an echo/ACK — discard it.
+    Then read `count` actual data packets.
+    """
+    # Discard ACK
+    try:
+        _ = device.get_feature_report(0x00, 65)
+    except OSError:
+        logger.debug("ACK read failed")
     time.sleep(FW_DELAY)
+
+    packets: list[list[int]] = []
+    for _ in range(count):
+        try:
+            pkt = device.get_feature_report(0x00, 65)
+            packets.append(pkt)
+        except OSError:
+            logger.debug("Data packet read failed")
+            break
+        time.sleep(FW_DELAY)
+
+    return packets
 
 
 def session_start(device: hid.device) -> None:
