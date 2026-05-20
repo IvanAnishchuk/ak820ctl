@@ -251,6 +251,144 @@ def dump(
         console.print(data.model_dump_json(indent=2))
 
 
+HEX_RGB_LEN = 6
+
+
+def _parse_hex_color(color: str) -> tuple[int, int, int]:
+    """Parse a hex color string like 'ff0000' into (R, G, B)."""
+    c = color.lstrip("#")
+    if len(c) != HEX_RGB_LEN:
+        msg = f"Color must be 6 hex digits (e.g. ff0000), got: {color}"
+        raise ValueError(msg)
+    return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+
+
+def _parse_key_spec(spec: str, num_keys: int) -> tuple[int, tuple[int, int, int]]:
+    """Parse 'INDEX:RRGGBB' into (index, (R, G, B))."""
+    if ":" not in spec:
+        msg = f"Invalid key spec: {spec} (expected INDEX:RRGGBB)"
+        raise ValueError(msg)
+    idx_str, color_str = spec.split(":", 1)
+    idx = int(idx_str)
+    if not 0 <= idx < num_keys:
+        msg = f"Key index must be 0-{num_keys - 1}, got: {idx}"
+        raise ValueError(msg)
+    return idx, _parse_hex_color(color_str)
+
+
+def _load_colors_file(path: Path, num_keys: int) -> list[tuple[int, int, int]]:
+    """Load per-key colors from JSON file."""
+    import json  # noqa: PLC0415
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    colors: list[tuple[int, int, int]] = [(0, 0, 0)] * num_keys
+    for entry in raw:
+        idx = entry["index"]
+        colors[idx] = (entry["r"], entry["g"], entry["b"])
+    return colors
+
+
+@app.command()
+def perkey(
+    all_color: Annotated[
+        str | None,
+        typer.Option("--all", "-a", help="Set all keys to this RGB hex color."),
+    ] = None,
+    key: Annotated[
+        list[str] | None,
+        typer.Option("--key", "-k", help="Set key by index: INDEX:RRGGBB (e.g. 42:ff0000)."),
+    ] = None,
+    file: Annotated[
+        Path | None,
+        typer.Option("--file", "-f", help="Load per-key colors from JSON file."),
+    ] = None,
+    dump: Annotated[
+        bool,
+        typer.Option("--dump", "-d", help="Dump live per-key state to JSON."),
+    ] = False,
+    dump_stored: Annotated[
+        bool,
+        typer.Option("--dump-stored", help="Dump stored per-key state from flash."),
+    ] = False,
+    brightness: Annotated[
+        int,
+        typer.Option("--brightness", "-b", help="Brightness 0-5 (for write operations)."),
+    ] = 5,
+) -> None:
+    """Read or set per-key custom RGB colors (144 keys).
+
+    With no options, displays the live per-key state.
+    """
+    import json  # noqa: PLC0415
+
+    from ak820ctl.perkey import (  # noqa: PLC0415
+        NUM_KEYS,
+        read_perkey_live,
+        read_perkey_stored,
+        write_perkey,
+    )
+
+    # Read modes
+    if dump or dump_stored:
+        try:
+            colors = read_perkey_stored() if dump_stored else read_perkey_live()
+        except RuntimeError as e:
+            console.print(f"[red]Error:[/] {e}")
+            raise typer.Exit(1) from None
+        data = [{"index": i, "r": r, "g": g, "b": b} for i, (r, g, b) in enumerate(colors)]
+        console.print(json.dumps(data, indent=2))
+        return
+
+    # Build colors list based on mode
+    colors_list: list[tuple[int, int, int]] | None = None
+    label = ""
+
+    try:
+        if all_color is not None:
+            rgb = _parse_hex_color(all_color)
+            colors_list = [rgb] * NUM_KEYS
+            label = f"All {NUM_KEYS} keys set to #{all_color.lstrip('#')}"
+        elif key is not None:
+            current = read_perkey_live()
+            colors_list = list(current)
+            for spec in key:
+                idx, rgb = _parse_key_spec(spec, NUM_KEYS)
+                colors_list[idx] = rgb
+            label = f"Updated {len(key)} key(s)"
+        elif file is not None:
+            if not file.exists():
+                console.print(f"[red]File not found:[/] {file}")
+                raise typer.Exit(1)
+            colors_list = _load_colors_file(file, NUM_KEYS)
+            label = f"Loaded per-key colors from {file}"
+    except (ValueError, RuntimeError) as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+    if colors_list is not None:
+        try:
+            write_perkey(colors_list, brightness=brightness)
+            console.print(f"[green]{label}[/]")
+        except RuntimeError as e:
+            console.print(f"[red]Error:[/] {e}")
+            raise typer.Exit(1) from None
+        return
+
+    # Default: show live state
+    try:
+        colors = read_perkey_live()
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+    active = [(i, r, g, b) for i, (r, g, b) in enumerate(colors) if r or g or b]
+    if not active:
+        console.print("[dim]No per-key colors active (all black)[/]")
+    else:
+        console.print(f"[bold]{len(active)} key(s) with color:[/]")
+        for i, r, g, b in active:
+            console.print(f"  [dim]{i:3d}:[/] #{r:02x}{g:02x}{b:02x}")
+
+
 @app.command()
 def image(
     file: Annotated[Path, typer.Argument(help="Image file (PNG, JPG, BMP, etc.).")],
