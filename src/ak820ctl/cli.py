@@ -257,7 +257,12 @@ def image(
         typer.Option("--slot", "-s", help="LCD slot index."),
     ] = 1,
 ) -> None:
-    """Upload a static image to the keyboard LCD (128x128)."""
+    """Upload a static image to the keyboard LCD (128x128).
+
+    WARNING: This replaces the firmware's built-in status screen.
+    There is no known command to restore the default display —
+    power-cycle the keyboard (unplug and replug USB) to get it back.
+    """
     from rich.progress import Progress  # noqa: PLC0415
 
     from ak820ctl.display import load_image, upload_image  # noqa: PLC0415
@@ -300,7 +305,12 @@ def gif(
         typer.Option("--max-frames", help="Maximum number of frames to upload."),
     ] = 141,
 ) -> None:
-    """Upload an animated GIF to the keyboard LCD (128x128, max 141 frames)."""
+    """Upload an animated GIF to the keyboard LCD (128x128, max 141 frames).
+
+    WARNING: This replaces the firmware's built-in status screen.
+    There is no known command to restore the default display —
+    power-cycle the keyboard (unplug and replug USB) to get it back.
+    """
     from rich.progress import Progress  # noqa: PLC0415
 
     from ak820ctl.display import load_animation, upload_image  # noqa: PLC0415
