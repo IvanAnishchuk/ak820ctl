@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `dump` / `restore` commands: save and load keyboard settings as JSON
+- Pydantic models for typed serialization/validation of keyboard settings
 - `light --show` / `light` (no args): read and display current lighting config from keyboard
 - `info` command: show device VID/PID and capabilities from CMD 0x05 response
 - `send_report()`, `read_data()` HID helpers for read operations

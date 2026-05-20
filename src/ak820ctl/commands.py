@@ -251,8 +251,8 @@ def read_lighting(device: hid.device | None = None) -> LightingConfig:
             g=buf[3],
             b=buf[4],
             rainbow=bool(buf[9]),
-            brightness=buf[10],
-            speed=buf[11],
+            brightness=min(buf[10], 5),
+            speed=min(buf[11], 5),
             direction=DIRECTION_NAMES.get(buf[12], str(buf[12])),
         )
     finally:
@@ -290,9 +290,13 @@ def restore_settings(
     actions: list[str] = []
     try:
         cfg = dump.lighting
+        # Fall back to mode_value if mode string is unknown (e.g. "0x1f")
+        mode = (
+            cfg.mode if cfg.mode in LIGHT_MODES else LIGHT_MODE_NAMES.get(cfg.mode_value, "static")
+        )
         set_lighting(
             device,
-            mode=cfg.mode,
+            mode=mode,
             r=cfg.r,
             g=cfg.g,
             b=cfg.b,
@@ -301,7 +305,7 @@ def restore_settings(
             speed=cfg.speed,
             direction=cfg.direction,
         )
-        actions.append(f"lighting: {cfg.mode}")
+        actions.append(f"lighting: {mode}")
 
         if not skip_time:
             _ = sync_time(device)

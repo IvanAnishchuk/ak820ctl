@@ -239,7 +239,11 @@ def dump(
         raise typer.Exit(1) from None
 
     if output:
-        data.save(Path(output))
+        try:
+            data.save(Path(output))
+        except OSError as e:
+            console.print(f"[red]Cannot write file:[/] {e}")
+            raise typer.Exit(1) from None
         console.print(f"[green]Settings saved to:[/] {output}")
     else:
         console.print(data.model_dump_json(indent=2))
@@ -261,6 +265,11 @@ def restore(
 
     try:
         data = KeyboardDump.load(path)
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot read dump file:[/] {e}")
+        raise typer.Exit(1) from None
+
+    try:
         actions = restore_settings(data, skip_time=skip_time)
         for action in actions:
             console.print(f"[green]Restored:[/] {action}")
