@@ -129,10 +129,10 @@ def test_get_device_info_parses_response() -> None:
     with patch("ak820ctl.commands.open_device", return_value=mock_device):
         info = get_device_info(device=mock_device)
 
-    assert info["vid"] == 0x0C45
-    assert info["pid"] == 0x8009
-    assert info["firmware"] == "1.20"
-    assert info["capabilities"] == 0x3040
+    assert info.vid == 0x0C45
+    assert info.pid == 0x8009
+    assert info.firmware == "1.20"
+    assert info.capabilities == 0x3040
     mock_device.close.assert_not_called()
 
 
@@ -156,7 +156,7 @@ def test_get_device_info_no_data() -> None:
     with patch("ak820ctl.commands.open_device", return_value=mock_device):
         info = get_device_info(device=mock_device)
 
-    assert info == {"firmware": "unknown"}
+    assert info.firmware == "unknown"
 
 
 def test_get_firmware_version_delegates() -> None:
@@ -192,15 +192,15 @@ def test_read_lighting_parses_response() -> None:
     with patch("ak820ctl.commands.open_device", return_value=mock_device):
         cfg = read_lighting(device=mock_device)
 
-    assert cfg["mode"] == "static"
-    assert cfg["mode_value"] == 0x01
-    assert cfg["r"] == 0xFF
-    assert cfg["g"] == 0x00
-    assert cfg["b"] == 0x80
-    assert cfg["rainbow"] is True
-    assert cfg["brightness"] == 4
-    assert cfg["speed"] == 2
-    assert cfg["direction"] == "right"
+    assert cfg.mode == "static"
+    assert cfg.mode_value == 0x01
+    assert cfg.r == 0xFF
+    assert cfg.g == 0x00
+    assert cfg.b == 0x80
+    assert cfg.rainbow is True
+    assert cfg.brightness == 4
+    assert cfg.speed == 2
+    assert cfg.direction == "right"
 
 
 def test_read_lighting_unknown_mode() -> None:
@@ -213,7 +213,7 @@ def test_read_lighting_unknown_mode() -> None:
     with patch("ak820ctl.commands.open_device", return_value=mock_device):
         cfg = read_lighting(device=mock_device)
 
-    assert cfg["mode"] == "0xfe"
+    assert cfg.mode == "0xfe"
 
 
 def test_read_lighting_no_data() -> None:
@@ -223,4 +223,4 @@ def test_read_lighting_no_data() -> None:
     with patch("ak820ctl.commands.open_device", return_value=mock_device):
         cfg = read_lighting(device=mock_device)
 
-    assert cfg == {}
+    assert cfg.mode == "off"  # default LightingConfig
