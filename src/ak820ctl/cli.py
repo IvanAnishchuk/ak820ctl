@@ -21,6 +21,7 @@ from ak820ctl.commands import (
     set_sleep,
     sync_time,
 )
+from ak820ctl.display import MAX_FRAMES, MAX_SLOT
 from ak820ctl.hid import PID, VID, find_device
 from ak820ctl.models import KeyboardDump
 
@@ -271,6 +272,9 @@ def image(
     if not file.exists():
         console.print(f"[red]File not found:[/] {file}")
         raise typer.Exit(1)
+    if not 1 <= slot <= MAX_SLOT:
+        console.print(f"[red]Slot must be 1-255, got:[/] {slot}")
+        raise typer.Exit(1)
 
     try:
         data = load_image(file)
@@ -319,6 +323,10 @@ def gif(
     if not file.exists():
         console.print(f"[red]File not found:[/] {file}")
         raise typer.Exit(1)
+    if not 1 <= slot <= MAX_SLOT:
+        console.print(f"[red]Slot must be 1-255, got:[/] {slot}")
+        raise typer.Exit(1)
+    max_frames = min(max_frames, MAX_FRAMES)
 
     try:
         data = load_animation(file, max_frames=max_frames)

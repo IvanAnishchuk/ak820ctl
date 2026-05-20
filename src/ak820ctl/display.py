@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from typing import TYPE_CHECKING
 
 from PIL import Image
@@ -11,6 +12,7 @@ from PIL import Image
 from ak820ctl.hid import (
     DISPLAY_ACK_TIMEOUT_MS,
     DISPLAY_CHUNK_SIZE,
+    FW_DELAY,
     REPORT_ID,
     make_packet,
     open_device,
@@ -34,6 +36,7 @@ DISPLAY_HEIGHT = 128
 FRAME_BYTES = DISPLAY_WIDTH * DISPLAY_HEIGHT * 2  # RGB565, 2 bytes/pixel
 HEADER_SIZE = 256
 MAX_FRAMES = 141
+MAX_SLOT = 255
 CMD_IMAGE = 0x72
 
 
@@ -80,33 +83,34 @@ def build_header(frame_count: int, delays: list[int]) -> bytes:
 
 def load_image(path: Path) -> bytes:
     """Load a static image, resize to display size, return header + RGB565 data."""
-    rgb_img = Image.open(path).convert("RGB")
-    frame_data = frame_to_rgb565(rgb_img)
+    with Image.open(path) as img:
+        frame_data = frame_to_rgb565(img.convert("RGB"))
     header = build_header(1, [1])
     return header + frame_data
 
 
 def load_animation(path: Path, *, max_frames: int = MAX_FRAMES) -> bytes:
     """Load an animated GIF, return header + RGB565 data for all frames."""
-    img = Image.open(path)
+    with Image.open(path) as img:
+        if not getattr(img, "is_animated", False):
+            frame_data = frame_to_rgb565(img.convert("RGB"))
+            header = build_header(1, [1])
+            return header + frame_data
 
-    if not getattr(img, "is_animated", False):
-        return load_image(path)
+        n_frames_total: int = getattr(img, "n_frames", 1)
+        n_frames = min(n_frames_total, max_frames)
 
-    n_frames_total: int = getattr(img, "n_frames", 1)
-    n_frames = min(n_frames_total, max_frames)
+        delays: list[int] = []
+        frames_data = bytearray()
 
-    delays: list[int] = []
-    frames_data = bytearray()
+        for i in range(n_frames):
+            img.seek(i)
+            duration_ms: int = img.info.get("duration", 50)
+            delay_val = max(1, min(255, duration_ms // 2))
+            delays.append(delay_val)
 
-    for i in range(n_frames):
-        img.seek(i)
-        duration_ms: int = img.info.get("duration", 50)
-        delay_val = max(1, min(255, duration_ms // 2))
-        delays.append(delay_val)
-
-        frame_rgb = img.convert("RGB")
-        frames_data.extend(frame_to_rgb565(frame_rgb))
+            frame_rgb = img.convert("RGB")
+            frames_data.extend(frame_to_rgb565(frame_rgb))
 
     header = build_header(n_frames, delays)
     return header + bytes(frames_data)
@@ -178,6 +182,7 @@ def upload_image(
             report = b"\x00" + chunk
             disp_device.write(report)
             _read_display_ack(disp_device)
+            time.sleep(FW_DELAY)
 
             if progress_callback is not None:
                 progress_callback(i + 1, n_chunks)
