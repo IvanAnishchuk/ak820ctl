@@ -55,7 +55,7 @@ jobs:
         run: uv run meson setup builddir
 
       - name: Run tests
-        run: uv run ninja -C builddir pytest-junit.xml
+        run: uv run ninja -C builddir pytest-junit-unit.xml
 
       - name: Upload test + coverage artifacts
         if: always()
@@ -63,7 +63,7 @@ jobs:
         with:
           name: test-results-${{ matrix.python-version }}
           path: |
-            builddir/pytest-junit.xml
-            builddir/pytest.log
-            builddir/coverage.xml
+            builddir/pytest-junit-unit.xml
+            builddir/pytest-unit.log
+            builddir/coverage/coverage-unit.xml
           retention-days: 14
