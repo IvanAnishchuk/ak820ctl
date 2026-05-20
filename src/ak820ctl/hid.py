@@ -14,6 +14,11 @@ PACKET_SIZE = 64
 REPORT_ID = 0x04
 FW_DELAY = 0.035  # 35ms mandatory inter-command delay
 
+# Display data channel (Interface 2)
+DISPLAY_USAGE_PAGE = 0xFF68
+DISPLAY_CHUNK_SIZE = 4096
+DISPLAY_ACK_TIMEOUT_MS = 300
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,6 +38,31 @@ def open_device(path: bytes | None = None) -> hid.device:
     """Open the AK820 command interface."""
     if path is None:
         path = find_device()
+    device = hid.device()
+    device.open_path(path)
+    return device
+
+
+def find_display_device() -> bytes:
+    """Find the AK820 HID device path for Interface 2 (display data channel)."""
+    for dev in hid.enumerate(VID, PID):
+        if dev["usage_page"] == DISPLAY_USAGE_PAGE:
+            return dev["path"]
+    msg = (
+        f"AK820 display interface not found (VID={VID:#06x} PID={PID:#06x} "
+        f"Usage Page {DISPLAY_USAGE_PAGE:#06x}). Is the keyboard connected via USB?"
+    )
+    raise RuntimeError(msg)
+
+
+def open_display_device(path: bytes | None = None) -> hid.device:
+    """Open the AK820 display data interface (Interface 2).
+
+    IMPORTANT: Only use write() and read() on this device.
+    NEVER use get_feature_report() — it crashes the firmware.
+    """
+    if path is None:
+        path = find_display_device()
     device = hid.device()
     device.open_path(path)
     return device

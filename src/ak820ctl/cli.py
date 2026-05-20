@@ -250,6 +250,91 @@ def dump(
 
 
 @app.command()
+def image(
+    file: Annotated[Path, typer.Argument(help="Image file (PNG, JPG, BMP, etc.).")],
+    slot: Annotated[
+        int,
+        typer.Option("--slot", "-s", help="LCD slot index."),
+    ] = 1,
+) -> None:
+    """Upload a static image to the keyboard LCD (128x128)."""
+    from rich.progress import Progress  # noqa: PLC0415
+
+    from ak820ctl.display import load_image, upload_image  # noqa: PLC0415
+    from ak820ctl.hid import DISPLAY_CHUNK_SIZE  # noqa: PLC0415
+
+    if not file.exists():
+        console.print(f"[red]File not found:[/] {file}")
+        raise typer.Exit(1)
+
+    try:
+        data = load_image(file)
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot load image:[/] {e}")
+        raise typer.Exit(1) from None
+
+    n_chunks = -(-len(data) // DISPLAY_CHUNK_SIZE)
+    try:
+        with Progress(console=console) as progress:
+            task = progress.add_task("Uploading...", total=n_chunks)
+
+            def _on_progress(done: int, _total: int) -> None:
+                progress.update(task, completed=done)
+
+            upload_image(data, slot=slot, progress_callback=_on_progress)
+        console.print(f"[green]Image uploaded to slot {slot}[/]")
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+
+@app.command()
+def gif(
+    file: Annotated[Path, typer.Argument(help="Animated GIF file.")],
+    slot: Annotated[
+        int,
+        typer.Option("--slot", "-s", help="LCD slot index."),
+    ] = 1,
+    max_frames: Annotated[
+        int,
+        typer.Option("--max-frames", help="Maximum number of frames to upload."),
+    ] = 141,
+) -> None:
+    """Upload an animated GIF to the keyboard LCD (128x128, max 141 frames)."""
+    from rich.progress import Progress  # noqa: PLC0415
+
+    from ak820ctl.display import load_animation, upload_image  # noqa: PLC0415
+    from ak820ctl.hid import DISPLAY_CHUNK_SIZE  # noqa: PLC0415
+
+    if not file.exists():
+        console.print(f"[red]File not found:[/] {file}")
+        raise typer.Exit(1)
+
+    try:
+        data = load_animation(file, max_frames=max_frames)
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot load animation:[/] {e}")
+        raise typer.Exit(1) from None
+
+    n_frames = data[0]
+    console.print(f"[dim]Loaded {n_frames} frame(s)[/]")
+
+    n_chunks = -(-len(data) // DISPLAY_CHUNK_SIZE)
+    try:
+        with Progress(console=console) as progress:
+            task = progress.add_task("Uploading...", total=n_chunks)
+
+            def _on_progress(done: int, _total: int) -> None:
+                progress.update(task, completed=done)
+
+            upload_image(data, slot=slot, progress_callback=_on_progress)
+        console.print(f"[green]Animation uploaded to slot {slot}[/] ({n_frames} frames)")
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+
+@app.command()
 def restore(
     input_file: Annotated[str, typer.Argument(help="JSON file to restore from.")],
     skip_time: Annotated[
