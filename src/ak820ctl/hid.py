@@ -43,14 +43,25 @@ def open_device(path: bytes | None = None) -> hid.device:
     return device
 
 
+DISPLAY_INTERFACE = 2
+
+
 def find_display_device() -> bytes:
-    """Find the AK820 HID device path for Interface 2 (display data channel)."""
+    """Find the AK820 HID device path for Interface 2 (display data channel).
+
+    Tries usage page first (more robust), falls back to interface number
+    when the hidapi backend doesn't report usage pages (e.g. Linux hidraw).
+    """
     for dev in hid.enumerate(VID, PID):
         if dev["usage_page"] == DISPLAY_USAGE_PAGE:
             return dev["path"]
+    # Fallback: match by interface number
+    for dev in hid.enumerate(VID, PID):
+        if dev["interface_number"] == DISPLAY_INTERFACE:
+            return dev["path"]
     msg = (
         f"AK820 display interface not found (VID={VID:#06x} PID={PID:#06x} "
-        f"Usage Page {DISPLAY_USAGE_PAGE:#06x}). Is the keyboard connected via USB?"
+        f"Interface {DISPLAY_INTERFACE}). Is the keyboard connected via USB?"
     )
     raise RuntimeError(msg)
 
