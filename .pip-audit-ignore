@@ -1,0 +1,3 @@
+# pip-audit vulnerability ignore list (one ID per line)
+# Format: VULN-ID  # package: reason
+PYSEC-2026-89  # markdown: no fix available, affects all versions
