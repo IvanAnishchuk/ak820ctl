@@ -34,34 +34,54 @@ build_root = meson.project_build_root()
 uv = find_program('uv')
 bash = find_program('bash')
 
-# ── Tests ──────────────────────────────────────────────────────────────────
+# ── Helper: wrapper script that runs pytest and captures artifacts ─────────
 
-custom_target(
-  'test-unit',
-  output: ['pytest-junit.xml', 'pytest.log'],
-  command: [
-    bash, '-c',
-    '''cd @0@
-uv run pytest tests/ -v \
-  --junitxml=@1@/pytest-junit.xml \
-  --cov=ak820ctl \
-  --cov-config=pyproject.toml \
-  --cov-report=term-missing \
-  --cov-report=xml:@1@/coverage.xml \
-  2>&1 | tee @1@/pytest.log
-'''.format(src_root, build_root),
-  ],
-  build_always_stale: true,
-  console: true,
-)
+wrapper = files('scripts' / 'meson_pytest_wrapper.sh')
 
-test(
-  'unit',
-  bash, args: ['-c', 'cd @0@ && uv run pytest tests/ -v --no-cov'.format(src_root)],
-  suite: ['tests', 'fast'],
-  timeout: 60,
-  workdir: src_root,
-)
+# ── Test type definitions ─────────────────────────────────────────────────
+# Each entry: {'args': [pytest_args], 'timeout': seconds, 'suites': [suites]}
+
+test_defs = {
+  'unit': {'args': ['tests/'], 'timeout': 60, 'suites': ['tests', 'fast']},
+}
+
+default_types = ['unit']
+
+# ── Generate test targets ─────────────────────────────────────────────────
+
+default_test_targets = []
+
+foreach name, def : test_defs
+  pytest_args = def['args']
+
+  # custom_target: produces build artifacts (junit xml, coverage, log)
+  t = custom_target(
+    'test-' + name,
+    output: ['pytest-junit-' + name + '.xml', 'pytest-' + name + '.log'],
+    command: [
+      bash, wrapper,
+      src_root,
+      build_root,
+      name,
+      pytest_args,
+    ],
+    build_always_stale: true,
+    console: true,
+    build_by_default: default_types.contains(name),
+  )
+  if default_types.contains(name)
+    default_test_targets += t
+  endif
+
+  # test(): meson test integration (meson test --suite unit, --list, etc.)
+  test(
+    name,
+    bash, args: [wrapper, src_root, build_root, name] + pytest_args,
+    suite: def['suites'],
+    timeout: def['timeout'],
+    workdir: src_root,
+  )
+endforeach
 
 # ── Lint: ruff check ───────────────────────────────────────────────────────
 
@@ -267,6 +287,9 @@ run_target(
   'clean-reports',
   command: [
     bash, '-c',
-    'rm -f @0@/ruff-*.txt @0@/ruff-*.json @0@/ty-*.txt @0@/mypy-*.txt @0@/pyright-*.txt @0@/pytest-*.xml @0@/pytest.log @0@/coverage.xml'.format(build_root),
+    '''rm -f @0@/ruff-*.txt @0@/ruff-*.json @0@/ty-*.txt @0@/mypy-*.txt @0@/pyright-*.txt
+rm -f @0@/pytest-junit-*.xml @0@/pytest-*.log
+rm -rf @0@/coverage @0@/mutmut
+'''.format(build_root),
   ],
 )

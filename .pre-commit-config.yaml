@@ -104,7 +104,10 @@ repos:
 
       - id: basedpyright
         name: basedpyright (recommended)
-        entry: uv run basedpyright src/
+        # TODO: basedpyright exits non-zero on warnings from typer's incomplete
+        # stubs (reportUnknownMemberType). Use --level error until typer ships
+        # full type coverage. Review periodically.
+        entry: uv run basedpyright --level error src/
         language: system
         types: [python]
         pass_filenames: false
