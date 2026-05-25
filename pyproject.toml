@@ -36,7 +36,7 @@ ak820ctl = "ak820ctl.cli:app"
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.13",
+    "ruff>=0.15.14",
     "ty",
     "pytest>=8.0",
     "pytest-cov>=6.0",
@@ -48,7 +48,7 @@ dev = [
     "meson>=1.11.1",
     "ninja>=1.13.0",
     "mypy>=2.1.0",
-    "basedpyright>=1.39.5",
+    "basedpyright>=1.39.6",
     "mutmut>=3.5.0",
     "hypothesis>=6.152.7",
 ]
