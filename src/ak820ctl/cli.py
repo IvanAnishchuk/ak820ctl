@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.progress import Progress
 
 from ak820ctl import __version__
 from ak820ctl.commands import (
@@ -21,8 +22,8 @@ from ak820ctl.commands import (
     set_sleep,
     sync_time,
 )
-from ak820ctl.display import MAX_FRAMES, MAX_SLOT
-from ak820ctl.hid import PID, VID, find_device
+from ak820ctl.display import MAX_FRAMES, MAX_SLOT, load_animation, load_image, upload_image
+from ak820ctl.hid import DISPLAY_CHUNK_SIZE, PID, VID, find_device
 from ak820ctl.models import KeyboardDump
 
 app = typer.Typer(
@@ -264,11 +265,6 @@ def image(
     There is no known command to restore the default display.
     Turn the wheel button to switch to another screen and back.
     """
-    from rich.progress import Progress  # noqa: PLC0415
-
-    from ak820ctl.display import load_image, upload_image  # noqa: PLC0415
-    from ak820ctl.hid import DISPLAY_CHUNK_SIZE  # noqa: PLC0415
-
     if not file.exists():
         console.print(f"[red]File not found:[/] {file}")
         raise typer.Exit(1)
@@ -315,11 +311,6 @@ def gif(
     There is no known command to restore the default display.
     Turn the wheel button to switch to another screen and back.
     """
-    from rich.progress import Progress  # noqa: PLC0415
-
-    from ak820ctl.display import load_animation, upload_image  # noqa: PLC0415
-    from ak820ctl.hid import DISPLAY_CHUNK_SIZE  # noqa: PLC0415
-
     if not file.exists():
         console.print(f"[red]File not found:[/] {file}")
         raise typer.Exit(1)

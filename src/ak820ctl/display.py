@@ -161,12 +161,12 @@ def upload_image(
 
     own_cmd = cmd_device is None
     own_disp = disp_device is None
-    if cmd_device is None:
-        cmd_device = open_device()
-    if disp_device is None:
-        disp_device = open_display_device()
-
     try:
+        if cmd_device is None:
+            cmd_device = open_device()
+        if disp_device is None:
+            disp_device = open_display_device()
+
         # Step 1: CMD_START on Interface 3
         session_start(cmd_device)
 
@@ -197,7 +197,7 @@ def upload_image(
         # Step 4: CMD_SAVE on Interface 3
         session_save(cmd_device)
     finally:
-        if own_disp:
+        if own_disp and disp_device is not None:
             disp_device.close()
-        if own_cmd:
+        if own_cmd and cmd_device is not None:
             cmd_device.close()
