@@ -225,8 +225,9 @@ ACKs use `poll()` + `read()` on display interface fd with 300ms timeout.
 - `ak820ctl gif <file.gif>` — extract frames, build header, upload animation
 
 **WARNING:** Uploading a custom image replaces the firmware's built-in status
-screen. There is no known USB command to restore the default display. Power-cycle
-the keyboard (unplug and replug USB) to get the status screen back.
+screen. There is no known USB command to restore the default display. The image
+persists across power cycles. Turn the wheel button to switch to the status
+screen and back.
 
 ---
 

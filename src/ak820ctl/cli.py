@@ -261,8 +261,8 @@ def image(
     """Upload a static image to the keyboard LCD (128x128).
 
     WARNING: This replaces the firmware's built-in status screen.
-    There is no known command to restore the default display —
-    power-cycle the keyboard (unplug and replug USB) to get it back.
+    There is no known command to restore the default display.
+    Turn the wheel button to switch to another screen and back.
     """
     from rich.progress import Progress  # noqa: PLC0415
 
@@ -312,8 +312,8 @@ def gif(
     """Upload an animated GIF to the keyboard LCD (128x128, max 141 frames).
 
     WARNING: This replaces the firmware's built-in status screen.
-    There is no known command to restore the default display —
-    power-cycle the keyboard (unplug and replug USB) to get it back.
+    There is no known command to restore the default display.
+    Turn the wheel button to switch to another screen and back.
     """
     from rich.progress import Progress  # noqa: PLC0415
 
