@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.progress import Progress
 
 from ak820ctl import __version__
 from ak820ctl.commands import (
@@ -21,7 +22,8 @@ from ak820ctl.commands import (
     set_sleep,
     sync_time,
 )
-from ak820ctl.hid import PID, VID, find_device
+from ak820ctl.display import MAX_FRAMES, MAX_SLOT, load_animation, load_image, upload_image
+from ak820ctl.hid import DISPLAY_CHUNK_SIZE, PID, VID, find_device
 from ak820ctl.models import KeyboardDump
 
 app = typer.Typer(
@@ -247,6 +249,101 @@ def dump(
         console.print(f"[green]Settings saved to:[/] {output}")
     else:
         console.print(data.model_dump_json(indent=2))
+
+
+@app.command()
+def image(
+    file: Annotated[Path, typer.Argument(help="Image file (PNG, JPG, BMP, etc.).")],
+    slot: Annotated[
+        int,
+        typer.Option("--slot", "-s", help="LCD slot index."),
+    ] = 1,
+) -> None:
+    """Upload a static image to the keyboard LCD (128x128).
+
+    WARNING: This replaces the firmware's built-in status screen.
+    There is no known command to restore the default display.
+    Turn the wheel button to switch to another screen and back.
+    """
+    if not file.exists():
+        console.print(f"[red]File not found:[/] {file}")
+        raise typer.Exit(1)
+    if not 1 <= slot <= MAX_SLOT:
+        console.print(f"[red]Slot must be 1-255, got:[/] {slot}")
+        raise typer.Exit(1)
+
+    try:
+        data = load_image(file)
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot load image:[/] {e}")
+        raise typer.Exit(1) from None
+
+    n_chunks = -(-len(data) // DISPLAY_CHUNK_SIZE)
+    try:
+        with Progress(console=console) as progress:
+            task = progress.add_task("Uploading...", total=n_chunks)
+
+            def _on_progress(done: int, _total: int) -> None:
+                progress.update(task, completed=done)
+
+            upload_image(data, slot=slot, progress_callback=_on_progress)
+        console.print(f"[green]Image uploaded to slot {slot}[/]")
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+
+@app.command()
+def gif(
+    file: Annotated[Path, typer.Argument(help="Animated GIF file.")],
+    slot: Annotated[
+        int,
+        typer.Option("--slot", "-s", help="LCD slot index."),
+    ] = 1,
+    max_frames: Annotated[
+        int,
+        typer.Option("--max-frames", help="Maximum number of frames to upload."),
+    ] = MAX_FRAMES,
+) -> None:
+    """Upload an animated GIF to the keyboard LCD (128x128, max 141 frames).
+
+    WARNING: This replaces the firmware's built-in status screen.
+    There is no known command to restore the default display.
+    Turn the wheel button to switch to another screen and back.
+    """
+    if not file.exists():
+        console.print(f"[red]File not found:[/] {file}")
+        raise typer.Exit(1)
+    if not 1 <= slot <= MAX_SLOT:
+        console.print(f"[red]Slot must be 1-255, got:[/] {slot}")
+        raise typer.Exit(1)
+    if max_frames < 1:
+        console.print(f"[red]max-frames must be >= 1, got:[/] {max_frames}")
+        raise typer.Exit(1)
+    max_frames = min(max_frames, MAX_FRAMES)
+
+    try:
+        data = load_animation(file, max_frames=max_frames)
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot load animation:[/] {e}")
+        raise typer.Exit(1) from None
+
+    n_frames = data[0]
+    console.print(f"[dim]Loaded {n_frames} frame(s)[/]")
+
+    n_chunks = -(-len(data) // DISPLAY_CHUNK_SIZE)
+    try:
+        with Progress(console=console) as progress:
+            task = progress.add_task("Uploading...", total=n_chunks)
+
+            def _on_progress(done: int, _total: int) -> None:
+                progress.update(task, completed=done)
+
+            upload_image(data, slot=slot, progress_callback=_on_progress)
+        console.print(f"[green]Animation uploaded to slot {slot}[/] ({n_frames} frames)")
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
 
 
 @app.command()

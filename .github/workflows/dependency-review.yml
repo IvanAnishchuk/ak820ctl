@@ -54,7 +54,8 @@ jobs:
             GPL-2.0-only,
             GPL-2.0-or-later,
             GPL-3.0-only,
-            GPL-3.0-or-later
+            GPL-3.0-or-later,
+            MIT-CMU
           retry-on-snapshot-warnings: true
           retry-on-snapshot-warnings-timeout: 120
           show-openssf-scorecard: true

@@ -185,7 +185,7 @@ Sequence: CMD_READ_PERKEY (arg2=0x09) → discard ACK → read 9 × 64-byte pack
 
 Same as `0xF5` but reads from flash instead of live state.
 
-### LCD Image Upload (CMD `0x72`) ⬜
+### LCD Image Upload (CMD `0x72`) ✅
 
 Upload static image or animated GIF to the 128×128 (or 240×135) LCD screen.
 
@@ -220,11 +220,14 @@ Sequence: START → CMD_IMAGE (slot, chunk_count) → data chunks on Interface 2
 ACKs use `poll()` + `read()` on display interface fd with 300ms timeout.
 **NEVER use `HIDIOCGFEATURE` on Interface 2** — crashes firmware, requires power cycle.
 
-**CLI ideas:**
+**CLI:**
 - `ak820ctl image <file.png>` — resize, convert to RGB565, upload
 - `ak820ctl gif <file.gif>` — extract frames, build header, upload animation
-- `ak820ctl image --clock-face <style>` — upload a custom clock face
-- `ak820ctl image --stats` — live system stats (CPU/GPU temp, RAM)
+
+**WARNING:** Uploading a custom image replaces the firmware's built-in status
+screen. There is no known USB command to restore the default display. The image
+persists across power cycles. Turn the wheel button to switch to the status
+screen and back.
 
 ---
 

@@ -22,6 +22,7 @@ dependencies = [
     "rich>=13.0",
     "hidapi>=0.15.0",
     "pydantic>=2.13.4",
+    "Pillow>=11.0",
 ]
 
 [project.urls]
