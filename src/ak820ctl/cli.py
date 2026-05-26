@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from rich.console import Console
 from rich.progress import Progress
 
@@ -353,7 +353,7 @@ def perkey(
                 raise typer.Exit(1)
             keys_list = _load_colors_file(file, NUM_KEYS)
             label = f"Loaded per-key colors from {file}"
-    except (ValueError, TypeError, RuntimeError) as e:
+    except (ValueError, TypeError, RuntimeError, ValidationError) as e:
         console.print(f"[red]Error:[/] {e}")
         raise typer.Exit(1) from None
 
