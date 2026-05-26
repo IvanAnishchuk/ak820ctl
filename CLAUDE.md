@@ -42,3 +42,4 @@ uv run python scripts/audit.py
 - pytest with coverage (threshold in pyproject.toml)
 - Conventional commits enforced by pre-commit hook
 - All CI checks must pass before merge (see .github/workflows/ci.yml)
+- Never squash merge PRs — use merge commits to preserve commit history
