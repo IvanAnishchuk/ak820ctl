@@ -307,7 +307,7 @@ def gif(
     max_frames: Annotated[
         int,
         typer.Option("--max-frames", help="Maximum number of frames to upload."),
-    ] = 141,
+    ] = MAX_FRAMES,
 ) -> None:
     """Upload an animated GIF to the keyboard LCD (128x128, max 141 frames).
 
@@ -325,6 +325,9 @@ def gif(
         raise typer.Exit(1)
     if not 1 <= slot <= MAX_SLOT:
         console.print(f"[red]Slot must be 1-255, got:[/] {slot}")
+        raise typer.Exit(1)
+    if max_frames < 1:
+        console.print(f"[red]max-frames must be >= 1, got:[/] {max_frames}")
         raise typer.Exit(1)
     max_frames = min(max_frames, MAX_FRAMES)
 

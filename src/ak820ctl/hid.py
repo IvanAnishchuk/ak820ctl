@@ -53,11 +53,11 @@ def find_display_device() -> bytes:
     when the hidapi backend doesn't report usage pages (e.g. Linux hidraw).
     """
     for dev in hid.enumerate(VID, PID):
-        if dev["usage_page"] == DISPLAY_USAGE_PAGE:
+        if dev.get("usage_page") == DISPLAY_USAGE_PAGE:
             return dev["path"]
     # Fallback: match by interface number
     for dev in hid.enumerate(VID, PID):
-        if dev["interface_number"] == DISPLAY_INTERFACE:
+        if dev.get("interface_number") == DISPLAY_INTERFACE:
             return dev["path"]
     msg = (
         f"AK820 display interface not found (VID={VID:#06x} PID={PID:#06x} "

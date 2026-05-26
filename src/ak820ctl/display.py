@@ -149,6 +149,13 @@ def upload_image(
         disp_device: Interface 2 display device. Opened if None.
         progress_callback: Called with (chunks_done, total_chunks) after each chunk.
     """
+    if not 1 <= slot <= MAX_SLOT:
+        msg = f"Slot {slot} out of range (1-{MAX_SLOT})"
+        raise ValueError(msg)
+    if len(data) < HEADER_SIZE:
+        msg = f"Data too short ({len(data)} bytes, minimum {HEADER_SIZE})"
+        raise ValueError(msg)
+
     total = len(data)
     n_chunks = math.ceil(total / DISPLAY_CHUNK_SIZE)
 
