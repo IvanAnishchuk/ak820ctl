@@ -143,14 +143,12 @@ Sequence: CMD_READ_LIGHTING (arg8=0x01) → discard ACK → read 1 data packet
 
 ---
 
-## Unimplemented Commands
+### `perkey` — Per-Key Custom RGB — Write (CMD `0x23`) ✅
 
-### Per-Key Custom RGB — Write (CMD `0x23`) ⬜
-
-Upload individual colors for each of 144 keys.
+Upload individual colors for each of 144 LED positions.
 
 ```
-Sequence: START → CMD_CUSTOM_LIGHT (arg2=0x09) → 9 × 64-byte data packets → SAVE → FINISH
+Sequence: START → CMD_CUSTOM_LIGHT (arg8=0x09) → 9 × 64-byte data packets → SAVE → FINISH
 ```
 
 Then activate with lighting mode `0x80`.
@@ -164,26 +162,54 @@ Then activate with lighting mode `0x80`.
 | 2 | G |
 | 3 | B |
 
-**CLI ideas:**
-- `ak820ctl perkey --file colors.json` — load from file
-- `ak820ctl perkey --key 42 ff0000` — set single key
+**CLI:**
+- `ak820ctl perkey --load colors.json` — load from JSON file
+- `ak820ctl perkey --save state.json` — save live state to JSON file
+- `ak820ctl perkey --key 42:ff0000` — set single key by index
 - `ak820ctl perkey --all 00ff00` — set all keys same color
+- `ak820ctl perkey --dump` — dump live state to stdout
+- `ak820ctl perkey --dump-stored` — dump stored (flash) state to stdout
+- `ak820ctl perkey` — show active per-key colors
 
-### Per-Key Custom RGB — Read (CMD `0xF5`) ⬜
+### `perkey` — Per-Key Custom RGB — Read Live (CMD `0xF5`) ✅
 
-Read live per-key RGB state from device.
+Read live per-key RGB state from device RAM (no session start needed).
 
 ```
-Sequence: CMD_READ_PERKEY (arg2=0x09) → discard ACK → read 9 × 64-byte packets → SAVE → FINISH
+Sequence: CMD_READ_PERKEY (arg8=0x09) → read 9 × 64-byte packets → SAVE → FINISH
 ```
 
-**CLI ideas:**
-- `ak820ctl perkey --dump` — save current per-key state to JSON
-- `ak820ctl perkey --dump-stored` — read from flash (CMD `0x22`)
+### `perkey` — Per-Key Custom RGB — Read Stored (CMD `0x22`) ✅
 
-### Read Stored Per-Key Colors (CMD `0x22`) ⬜
+Read per-key RGB state from flash (requires session start).
 
-Same as `0xF5` but reads from flash instead of live state.
+```
+Sequence: START → CMD_READ_STORED (arg8=0x09) → read 9 × 64-byte packets → SAVE → FINISH
+```
+
+### LED Key Index Map
+
+The keyboard has 144 LED positions but only 81 are mapped to physical keys.
+The remaining 63 indices are unused (null). The full mapping is in
+`src/ak820ctl/keymap.json` and `src/ak820ctl/keymap.yaml`.
+
+**Physical layout (index → key):**
+
+| Row | Indices | Keys |
+|-----|---------|------|
+| F-row | 1–13 | esc, f1–f12 |
+| Number row | 19–31 | grave, 1–0, minus, equal |
+| QWERTY row | 37–49 | tab, q–p, lbracket, rbracket |
+| Home row | 55–67 | caps, a–l, semicolon, apostrophe, backslash |
+| Bottom row | 73–85 | lshift, z–slash, rshift, enter |
+| Space row | 91–102 | lctrl, win, lalt, space, ralt, fn, rctrl, arrows |
+| Extras | 103, 117–121 | backspace, home, pgup, delete, pgdn |
+
+Unused indices: 0, 14–18, 32–36, 50–54, 68–72, 86–90, 97, 104–116, 120, 122–143.
+
+---
+
+## Unimplemented Commands
 
 ### LCD Image Upload (CMD `0x72`) ✅
 

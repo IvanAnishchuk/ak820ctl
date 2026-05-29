@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import TypeAdapter, ValidationError
 from rich.console import Console
 from rich.progress import Progress
 
@@ -24,7 +26,8 @@ from ak820ctl.commands import (
 )
 from ak820ctl.display import MAX_FRAMES, MAX_SLOT, load_animation, load_image, upload_image
 from ak820ctl.hid import DISPLAY_CHUNK_SIZE, PID, VID, find_device
-from ak820ctl.models import KeyboardDump
+from ak820ctl.models import KeyboardDump, KeyColor
+from ak820ctl.perkey import NUM_KEYS, read_perkey_live, read_perkey_stored, write_perkey
 
 app = typer.Typer(
     name="ak820ctl",
@@ -34,7 +37,6 @@ app = typer.Typer(
 )
 console = Console()
 
-HEX_COLOR_LEN = 6
 DEFAULT_COLOR = "ffffff"
 DEFAULT_BRIGHTNESS = 5
 DEFAULT_SPEED = 3
@@ -167,7 +169,7 @@ def light(
         raise typer.Exit(1)
 
     color_hex = color.lstrip("#")
-    if len(color_hex) != HEX_COLOR_LEN:
+    if len(color_hex) != HEX_RGB_LEN:
         console.print("[red]Color must be 6 hex digits[/] (e.g. ff0000)")
         raise typer.Exit(1)
     r, g, b = int(color_hex[0:2], 16), int(color_hex[2:4], 16), int(color_hex[4:6], 16)
@@ -249,6 +251,163 @@ def dump(
         console.print(f"[green]Settings saved to:[/] {output}")
     else:
         console.print(data.model_dump_json(indent=2))
+
+
+HEX_RGB_LEN = 6
+
+
+def _parse_hex_color(color: str) -> tuple[int, int, int]:
+    """Parse a hex color string like 'ff0000' into (R, G, B)."""
+    c = color.lstrip("#")
+    if len(c) != HEX_RGB_LEN:
+        msg = f"Color must be 6 hex digits (e.g. ff0000), got: {color}"
+        raise ValueError(msg)
+    return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+
+
+def _parse_key_spec(spec: str, num_keys: int) -> tuple[int, tuple[int, int, int]]:
+    """Parse 'INDEX:RRGGBB' into (index, (R, G, B))."""
+    if ":" not in spec:
+        msg = f"Invalid key spec: {spec} (expected INDEX:RRGGBB)"
+        raise ValueError(msg)
+    idx_str, color_str = spec.split(":", 1)
+    idx = int(idx_str)
+    if not 0 <= idx < num_keys:
+        msg = f"Key index must be 0-{num_keys - 1}, got: {idx}"
+        raise ValueError(msg)
+    return idx, _parse_hex_color(color_str)
+
+
+_KEY_COLOR_LIST_ADAPTER = TypeAdapter(list[KeyColor])
+
+
+def _load_colors_file(path: Path, num_keys: int) -> list[KeyColor]:
+    """Load per-key colors from JSON file, validated via pydantic."""
+    entries = _KEY_COLOR_LIST_ADAPTER.validate_json(path.read_bytes())
+    keys = [KeyColor(index=i) for i in range(num_keys)]
+    for entry in entries:
+        keys[entry.index] = entry
+    return keys
+
+
+def _save_perkey_state(path: Path) -> None:
+    """Read live per-key state and save to JSON file."""
+    try:
+        keys_data = read_perkey_live()
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+    data = [k.model_dump() for k in keys_data]
+    try:
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    except OSError as e:
+        console.print(f"[red]Cannot write file:[/] {e}")
+        raise typer.Exit(1) from None
+    console.print(f"[green]Per-key state saved to:[/] {path}")
+
+
+def _dump_perkey_state(*, stored: bool) -> None:
+    """Read per-key state and print JSON to stdout."""
+    try:
+        keys_data = read_perkey_stored() if stored else read_perkey_live()
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+    data = [k.model_dump() for k in keys_data]
+    console.print(json.dumps(data, indent=2))
+
+
+@app.command()
+def perkey(
+    all_color: Annotated[
+        str | None,
+        typer.Option("--all", "-a", help="Set all keys to this RGB hex color."),
+    ] = None,
+    key: Annotated[
+        list[str] | None,
+        typer.Option("--key", "-k", help="Set key by index: INDEX:RRGGBB (e.g. 42:ff0000)."),
+    ] = None,
+    load: Annotated[
+        Path | None,
+        typer.Option("--load", "-l", help="Load per-key colors from JSON file."),
+    ] = None,
+    save: Annotated[
+        Path | None,
+        typer.Option("--save", "-s", help="Save live per-key state to JSON file."),
+    ] = None,
+    dump: Annotated[
+        bool,
+        typer.Option("--dump", "-d", help="Dump live per-key state to JSON (stdout)."),
+    ] = False,
+    dump_stored: Annotated[
+        bool,
+        typer.Option("--dump-stored", help="Dump stored per-key state from flash (stdout)."),
+    ] = False,
+    brightness: Annotated[
+        int,
+        typer.Option("--brightness", "-b", help="Brightness 0-5 (for write operations)."),
+    ] = 5,
+) -> None:
+    """Read or set per-key custom RGB colors (144 keys).
+
+    With no options, displays the live per-key state.
+    """
+    # Read modes
+    if save is not None:
+        _save_perkey_state(save)
+        return
+
+    if dump or dump_stored:
+        _dump_perkey_state(stored=dump_stored)
+        return
+
+    # Build keys list based on mode
+    keys_list: list[KeyColor] | None = None
+    label = ""
+
+    try:
+        if all_color is not None:
+            r, g, b = _parse_hex_color(all_color)
+            keys_list = [KeyColor(index=i, r=r, g=g, b=b) for i in range(NUM_KEYS)]
+            label = f"All {NUM_KEYS} keys set to #{all_color.lstrip('#')}"
+        elif key is not None:
+            keys_list = list(read_perkey_live())
+            for spec in key:
+                idx, (r, g, b) = _parse_key_spec(spec, NUM_KEYS)
+                keys_list[idx] = KeyColor(index=idx, r=r, g=g, b=b)
+            label = f"Updated {len(key)} key(s)"
+        elif load is not None:
+            if not load.exists():
+                console.print(f"[red]File not found:[/] {load}")
+                raise typer.Exit(1)
+            keys_list = _load_colors_file(load, NUM_KEYS)
+            label = f"Loaded per-key colors from {load}"
+    except (ValueError, TypeError, RuntimeError, ValidationError) as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+    if keys_list is not None:
+        try:
+            write_perkey(keys_list, brightness=brightness)
+            console.print(f"[green]{label}[/]")
+        except RuntimeError as e:
+            console.print(f"[red]Error:[/] {e}")
+            raise typer.Exit(1) from None
+        return
+
+    # Default: show live state
+    try:
+        keys_data = read_perkey_live()
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+    active = [k for k in keys_data if k.r or k.g or k.b]
+    if not active:
+        console.print("[dim]No per-key colors active (all black)[/]")
+    else:
+        console.print(f"[bold]{len(active)} key(s) with color:[/]")
+        for k in active:
+            console.print(f"  [dim]{k.index:3d}:[/] #{k.r:02x}{k.g:02x}{k.b:02x}")
 
 
 @app.command()

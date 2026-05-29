@@ -43,3 +43,4 @@ uv run python scripts/audit.py
 - Conventional commits enforced by pre-commit hook
 - All CI checks must pass before merge (see .github/workflows/ci.yml)
 - Never squash merge PRs — use merge commits to preserve commit history
+- Never use `git add -A` or `git add .` — always stage individual files by name

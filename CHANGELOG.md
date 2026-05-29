@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - `image` / `gif` commands: upload static images and animated GIFs to the 128×128 LCD screen
+- `perkey` command: read and set per-key custom RGB colors for 144 keys
+  - `--save`/`--load` for round-trip JSON persistence of per-key color configs
+  - `--dump`/`--dump-stored` for stdout inspection of live/flash state
+  - `--all`, `--key INDEX:RRGGBB` for quick color changes
+  - LED index keymap: 81 physical keys mapped out of 144 LED positions
+  - Example color schemes: groups, rainbow, blocks, ocean, sunset, stealth
 - `dump` / `restore` commands: save and load keyboard settings as JSON
 - Pydantic models for typed serialization/validation of keyboard settings
 - `light --show` / `light` (no args): read and display current lighting config from keyboard

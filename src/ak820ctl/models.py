@@ -31,6 +31,15 @@ class LightingConfig(BaseModel):
     direction: str = "left"
 
 
+class KeyColor(BaseModel):
+    """Single key color entry for per-key custom lighting."""
+
+    index: int = Field(ge=0, le=143)
+    r: int = Field(default=0, ge=0, le=255)
+    g: int = Field(default=0, ge=0, le=255)
+    b: int = Field(default=0, ge=0, le=255)
+
+
 class KeyboardDump(BaseModel):
     """Complete keyboard settings snapshot."""
 
