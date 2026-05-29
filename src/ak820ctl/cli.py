@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from importlib import resources
 from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 from pydantic import TypeAdapter, ValidationError
 from rich.console import Console
 from rich.progress import Progress
@@ -26,7 +28,7 @@ from ak820ctl.commands import (
 )
 from ak820ctl.display import MAX_FRAMES, MAX_SLOT, load_animation, load_image, upload_image
 from ak820ctl.hid import DISPLAY_CHUNK_SIZE, PID, VID, find_device
-from ak820ctl.models import KeyboardDump, KeyColor
+from ak820ctl.models import KeyboardDump, KeyColor, KeyMap, PerKeyConfig
 from ak820ctl.perkey import NUM_KEYS, read_perkey_live, read_perkey_stored, write_perkey
 
 app = typer.Typer(
@@ -281,8 +283,41 @@ def _parse_key_spec(spec: str, num_keys: int) -> tuple[int, tuple[int, int, int]
 _KEY_COLOR_LIST_ADAPTER = TypeAdapter(list[KeyColor])
 
 
+def _load_keymap() -> KeyMap:
+    """Load the built-in keymap from the package."""
+    keymap_path = resources.files("ak820ctl").joinpath("keymap.yaml")
+    data = yaml.safe_load(keymap_path.read_text(encoding="utf-8"))
+    return KeyMap(**data)
+
+
+def _load_colors_yaml(path: Path, num_keys: int) -> list[KeyColor]:
+    """Load per-key colors from YAML config with named groups."""
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config = PerKeyConfig(**data)
+    keymap = _load_keymap()
+    name_to_idx = keymap.name_to_index()
+
+    # Start with default color for all keys
+    dr, dg, db = _parse_hex_color(config.default)
+    keys = [KeyColor(index=i, r=dr, g=dg, b=db) for i in range(num_keys)]
+
+    # Apply each group
+    for group in config.groups:
+        r, g, b = _parse_hex_color(group.color)
+        for key_name in group.keys:
+            idx = name_to_idx.get(key_name)
+            if idx is None:
+                msg = f"Unknown key '{key_name}' in group '{group.name}'"
+                raise ValueError(msg)
+            keys[idx] = KeyColor(index=idx, r=r, g=g, b=b)
+
+    return keys
+
+
 def _load_colors_file(path: Path, num_keys: int) -> list[KeyColor]:
-    """Load per-key colors from JSON file, validated via pydantic."""
+    """Load per-key colors from JSON or YAML file."""
+    if path.suffix in {".yaml", ".yml"}:
+        return _load_colors_yaml(path, num_keys)
     entries = _KEY_COLOR_LIST_ADAPTER.validate_json(path.read_bytes())
     keys = [KeyColor(index=i) for i in range(num_keys)]
     for entry in entries:

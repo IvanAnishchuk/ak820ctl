@@ -23,6 +23,7 @@ dependencies = [
     "hidapi>=0.15.0",
     "pydantic>=2.13.4",
     "Pillow>=11.0",
+    "PyYAML>=6.0",
 ]
 
 [project.urls]

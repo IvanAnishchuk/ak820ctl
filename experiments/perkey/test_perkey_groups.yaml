@@ -1,0 +1,56 @@
+default: "000000"
+
+groups:
+  - name: letters
+    color: "0000ff"
+    keys:
+      - a
+      - b
+      - c
+      - d
+      - e
+      - f
+      - g
+      - h
+      - i
+      - j
+      - k
+      - l
+      - m
+      - n
+      - o
+      - p
+      - q
+      - r
+      - s
+      - t
+      - u
+      - v
+      - w
+      - x
+      - y
+      - z
+
+  - name: numbers
+    color: "ff0000"
+    keys: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+
+  - name: f-keys
+    color: "00ff00"
+    keys: [f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12]
+
+  - name: modifiers
+    color: "ff00ff"
+    keys: [lshift, rshift, lctrl, rctrl, lalt, ralt, win, fn, caps]
+
+  - name: arrows
+    color: "00ffff"
+    keys: [up, down, left, right]
+
+  - name: navigation
+    color: "ff8000"
+    keys: [home, pgup, pgdn, delete, backspace, tab, enter, esc]
+
+  - name: punctuation
+    color: "ffff00"
+    keys: [grave, minus, equal, lbracket, rbracket, backslash, semicolon, apostrophe, comma, dot, slash, space]
