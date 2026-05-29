@@ -146,9 +146,9 @@ class TestCli:
         result = runner.invoke(app, ["perkey", "--help"])
         assert result.exit_code == 0
 
-    def test_file_not_found(self) -> None:
+    def test_load_not_found(self) -> None:
         runner = CliRunner()
-        result = runner.invoke(app, ["perkey", "--file", "/nonexistent/colors.json"])
+        result = runner.invoke(app, ["perkey", "--load", "/nonexistent/colors.json"])
         assert result.exit_code == 1
 
     @patch("ak820ctl.perkey.open_device")
@@ -194,7 +194,7 @@ class TestCli:
         result = runner.invoke(app, ["perkey", "--all", "ff0000"])
         assert result.exit_code == 0
 
-    def test_file_load_succeeds(self, tmp_path: Path) -> None:
+    def test_load_succeeds(self, tmp_path: Path) -> None:
         colors_file = tmp_path / "colors.json"
         data = [{"index": i, "r": 255, "g": 0, "b": 0} for i in range(NUM_KEYS)]
         colors_file.write_text(json.dumps(data))
@@ -209,5 +209,5 @@ class TestCli:
         ):
             mock_open.return_value = MagicMock()
             runner = CliRunner()
-            result = runner.invoke(app, ["perkey", "--file", str(colors_file)])
+            result = runner.invoke(app, ["perkey", "--load", str(colors_file)])
             assert result.exit_code == 0

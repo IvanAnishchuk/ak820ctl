@@ -290,6 +290,33 @@ def _load_colors_file(path: Path, num_keys: int) -> list[KeyColor]:
     return keys
 
 
+def _save_perkey_state(path: Path) -> None:
+    """Read live per-key state and save to JSON file."""
+    try:
+        keys_data = read_perkey_live()
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+    data = [k.model_dump() for k in keys_data]
+    try:
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    except OSError as e:
+        console.print(f"[red]Cannot write file:[/] {e}")
+        raise typer.Exit(1) from None
+    console.print(f"[green]Per-key state saved to:[/] {path}")
+
+
+def _dump_perkey_state(*, stored: bool) -> None:
+    """Read per-key state and print JSON to stdout."""
+    try:
+        keys_data = read_perkey_stored() if stored else read_perkey_live()
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+    data = [k.model_dump() for k in keys_data]
+    console.print(json.dumps(data, indent=2))
+
+
 @app.command()
 def perkey(
     all_color: Annotated[
@@ -300,17 +327,21 @@ def perkey(
         list[str] | None,
         typer.Option("--key", "-k", help="Set key by index: INDEX:RRGGBB (e.g. 42:ff0000)."),
     ] = None,
-    file: Annotated[
+    load: Annotated[
         Path | None,
-        typer.Option("--file", "-f", help="Load per-key colors from JSON file."),
+        typer.Option("--load", "-l", help="Load per-key colors from JSON file."),
+    ] = None,
+    save: Annotated[
+        Path | None,
+        typer.Option("--save", "-s", help="Save live per-key state to JSON file."),
     ] = None,
     dump: Annotated[
         bool,
-        typer.Option("--dump", "-d", help="Dump live per-key state to JSON."),
+        typer.Option("--dump", "-d", help="Dump live per-key state to JSON (stdout)."),
     ] = False,
     dump_stored: Annotated[
         bool,
-        typer.Option("--dump-stored", help="Dump stored per-key state from flash."),
+        typer.Option("--dump-stored", help="Dump stored per-key state from flash (stdout)."),
     ] = False,
     brightness: Annotated[
         int,
@@ -322,14 +353,12 @@ def perkey(
     With no options, displays the live per-key state.
     """
     # Read modes
+    if save is not None:
+        _save_perkey_state(save)
+        return
+
     if dump or dump_stored:
-        try:
-            keys_data = read_perkey_stored() if dump_stored else read_perkey_live()
-        except RuntimeError as e:
-            console.print(f"[red]Error:[/] {e}")
-            raise typer.Exit(1) from None
-        data = [k.model_dump() for k in keys_data]
-        console.print(json.dumps(data, indent=2))
+        _dump_perkey_state(stored=dump_stored)
         return
 
     # Build keys list based on mode
@@ -347,12 +376,12 @@ def perkey(
                 idx, (r, g, b) = _parse_key_spec(spec, NUM_KEYS)
                 keys_list[idx] = KeyColor(index=idx, r=r, g=g, b=b)
             label = f"Updated {len(key)} key(s)"
-        elif file is not None:
-            if not file.exists():
-                console.print(f"[red]File not found:[/] {file}")
+        elif load is not None:
+            if not load.exists():
+                console.print(f"[red]File not found:[/] {load}")
                 raise typer.Exit(1)
-            keys_list = _load_colors_file(file, NUM_KEYS)
-            label = f"Loaded per-key colors from {file}"
+            keys_list = _load_colors_file(load, NUM_KEYS)
+            label = f"Loaded per-key colors from {load}"
     except (ValueError, TypeError, RuntimeError, ValidationError) as e:
         console.print(f"[red]Error:[/] {e}")
         raise typer.Exit(1) from None
