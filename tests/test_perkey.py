@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path  # noqa: TC003 — used at runtime (tmp_path fixture)
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -211,3 +211,101 @@ class TestCli:
             runner = CliRunner()
             result = runner.invoke(app, ["perkey", "--load", str(colors_file)])
             assert result.exit_code == 0
+
+    @patch("ak820ctl.perkey.open_device")
+    @patch("ak820ctl.perkey.read_data")
+    @patch("ak820ctl.perkey.send_report")
+    @patch("ak820ctl.perkey.session_save")
+    @patch("ak820ctl.perkey.session_end")
+    def test_save_writes_valid_json(
+        self,
+        _mock_end: MagicMock,
+        _mock_save: MagicMock,
+        _mock_send: MagicMock,
+        mock_read: MagicMock,
+        mock_open: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_open.return_value = MagicMock()
+        # Build mock response with known colors
+        keys = [
+            KeyColor(index=i, r=i % 256, g=(i * 2) % 256, b=(i * 3) % 256) for i in range(NUM_KEYS)
+        ]
+        packets = build_perkey_data(keys)
+        mock_read.return_value = [[0x00, *pkt] for pkt in packets]
+
+        out_file = tmp_path / "saved.json"
+        runner = CliRunner()
+        result = runner.invoke(app, ["perkey", "--save", str(out_file)])
+        assert result.exit_code == 0
+
+        data = json.loads(out_file.read_text())
+        assert len(data) == NUM_KEYS
+        assert data[0]["r"] == 0
+        assert data[5]["r"] == 5
+        assert data[5]["g"] == 10
+        assert data[5]["b"] == 15
+
+    def test_save_load_round_trip(self, tmp_path: Path) -> None:
+        """Verify that --save output can be loaded back via --load identically."""
+        # Build mock HID response with varied colors
+        keys = [
+            KeyColor(index=i, r=i % 256, g=(i * 2) % 256, b=(i * 3) % 256) for i in range(NUM_KEYS)
+        ]
+        packets = build_perkey_data(keys)
+        mock_response = [[0x00, *pkt] for pkt in packets]
+
+        out_file = tmp_path / "round_trip.json"
+
+        # Step 1: Save
+        with (
+            patch("ak820ctl.perkey.open_device") as mock_open,
+            patch("ak820ctl.perkey.read_data") as mock_read,
+            patch("ak820ctl.perkey.send_report"),
+            patch("ak820ctl.perkey.session_save"),
+            patch("ak820ctl.perkey.session_end"),
+        ):
+            mock_open.return_value = MagicMock()
+            mock_read.return_value = mock_response
+            runner = CliRunner()
+            result = runner.invoke(app, ["perkey", "--save", str(out_file)])
+            assert result.exit_code == 0
+
+        # Step 2: Load back and verify data sent to device matches original
+        with (
+            patch("ak820ctl.perkey.open_device") as mock_open,
+            patch("ak820ctl.perkey.session_start"),
+            patch("ak820ctl.perkey.send_command") as mock_send,
+            patch("ak820ctl.perkey.session_save"),
+            patch("ak820ctl.perkey.session_end"),
+            patch("ak820ctl.perkey.set_lighting"),
+        ):
+            mock_open.return_value = MagicMock()
+            runner = CliRunner()
+            result = runner.invoke(app, ["perkey", "--load", str(out_file)])
+            assert result.exit_code == 0
+
+            # send_command is called 1 (CMD) + 9 (data) = 10 times
+            assert mock_send.call_count == 10
+            # Reconstruct data packets sent to device (calls 1-9)
+            sent_packets = [mock_send.call_args_list[i + 1][0][1] for i in range(NUM_PACKETS)]
+            sent_raw = b"".join(sent_packets)
+            for i in range(NUM_KEYS):
+                off = i * 4
+                assert sent_raw[off + 1] == i % 256  # r
+                assert sent_raw[off + 2] == (i * 2) % 256  # g
+                assert sent_raw[off + 3] == (i * 3) % 256  # b
+
+    @pytest.mark.parametrize("example", ["groups", "rainbow", "blocks"])
+    def test_load_example_files(self, example: str) -> None:
+        """Verify bundled example JSON files are valid and loadable."""
+        example_path = Path(__file__).parent.parent / "examples" / "perkey" / f"{example}.json"
+        assert example_path.exists(), f"Example file not found: {example_path}"
+
+        data = json.loads(example_path.read_text())
+        assert len(data) == NUM_KEYS
+        for entry in data:
+            assert 0 <= entry["index"] <= 143
+            assert 0 <= entry["r"] <= 255
+            assert 0 <= entry["g"] <= 255
+            assert 0 <= entry["b"] <= 255
