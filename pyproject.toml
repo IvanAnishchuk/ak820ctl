@@ -18,7 +18,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "typer>=0.15",
+    "typer>=0.26.5",
     "rich>=13.0",
     "hidapi>=0.15.0",
     "pydantic>=2.13.4",
