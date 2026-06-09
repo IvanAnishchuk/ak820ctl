@@ -20,6 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def export(extra_args: list[str], dest: Path) -> None:
+    # Pass --output-file (not stdout capture) so uv embeds the same command
+    # in the header comment as the CI workflow at .github/workflows/dependabot-regen.yml.
+    rel = dest.relative_to(REPO_ROOT)
     cmd = [
         "uv",
         "export",
@@ -27,13 +30,14 @@ def export(extra_args: list[str], dest: Path) -> None:
         "requirements-txt",
         "--no-emit-project",
         *extra_args,
+        "--output-file",
+        str(rel),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT, check=False)
     if result.returncode != 0:
         console.print(f"[bold red]Error:[/] {result.stderr}", highlight=False)
         sys.exit(result.returncode)
-    dest.write_text(result.stdout, encoding="utf-8")
-    console.print(f"  wrote {dest.relative_to(REPO_ROOT)}")
+    console.print(f"  wrote {rel}")
 
 
 def main() -> None:
