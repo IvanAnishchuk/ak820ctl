@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from importlib import resources
 from pathlib import Path
 from typing import Annotated
 
@@ -26,7 +27,7 @@ from ak820ctl.commands import (
 )
 from ak820ctl.display import MAX_FRAMES, MAX_SLOT, load_animation, load_image, upload_image
 from ak820ctl.hid import DISPLAY_CHUNK_SIZE, PID, VID, find_device
-from ak820ctl.models import KeyboardDump, KeyColor
+from ak820ctl.models import KeyboardDump, KeyColor, ThemeSource
 from ak820ctl.perkey import NUM_KEYS, read_perkey_live, read_perkey_stored, write_perkey
 
 app = typer.Typer(
@@ -408,6 +409,116 @@ def perkey(
         console.print(f"[bold]{len(active)} key(s) with color:[/]")
         for k in active:
             console.print(f"  [dim]{k.index:3d}:[/] #{k.r:02x}{k.g:02x}{k.b:02x}")
+
+
+def _read_data_text(*parts: str) -> str:
+    """Read a bundled data file by path components under `ak820ctl/data/`."""
+    traversable = resources.files("ak820ctl") / "data"
+    for p in parts:
+        traversable = traversable / p
+    return traversable.read_text(encoding="utf-8")
+
+
+def _load_keymap(path: Path | None = None) -> dict[str, int]:
+    """Load keymap and return a name→index dict. None uses bundled keymap."""
+    text = path.read_text(encoding="utf-8") if path is not None else _read_data_text("keymap.json")
+    raw = json.loads(text)
+    return {name: int(idx) for idx, name in raw.items() if name is not None}
+
+
+def _load_layout(path: Path | None = None) -> dict[str, list[str]]:
+    """Load a layout file. None uses bundled simple layout."""
+    text = (
+        path.read_text(encoding="utf-8")
+        if path is not None
+        else _read_data_text("layouts", "simple.json")
+    )
+    parsed: dict[str, list[str]] = json.loads(text)
+    return parsed
+
+
+def _compile_theme(
+    source: ThemeSource,
+    layout: dict[str, list[str]],
+    keymap: dict[str, int],
+) -> list[KeyColor]:
+    """Build 144 KeyColor entries from a theme source.
+
+    Order of precedence (lowest first): base, groups, overrides.
+    Raises ValueError if a group or override references a name not in
+    the layout/keymap respectively.
+    """
+    br, bg, bb = _parse_hex_color(source.base)
+    keys = [KeyColor(index=i, r=br, g=bg, b=bb) for i in range(NUM_KEYS)]
+
+    for group_name, color_hex in source.groups.items():
+        if group_name not in layout:
+            msg = f"Unknown group {group_name!r} (not defined in layout)"
+            raise ValueError(msg)
+        r, g, b = _parse_hex_color(color_hex)
+        for name in layout[group_name]:
+            if name not in keymap:
+                msg = f"Group {group_name!r} references unknown key {name!r}"
+                raise ValueError(msg)
+            idx = keymap[name]
+            keys[idx] = KeyColor(index=idx, r=r, g=g, b=b)
+
+    for name, color_hex in source.overrides.items():
+        if name not in keymap:
+            msg = f"Override references unknown key {name!r}"
+            raise ValueError(msg)
+        r, g, b = _parse_hex_color(color_hex)
+        idx = keymap[name]
+        keys[idx] = KeyColor(index=idx, r=r, g=g, b=b)
+
+    for idx, color_hex in source.indices.items():
+        if not 0 <= idx < NUM_KEYS:
+            msg = f"Index override {idx} out of range (must be 0-{NUM_KEYS - 1})"
+            raise ValueError(msg)
+        r, g, b = _parse_hex_color(color_hex)
+        keys[idx] = KeyColor(index=idx, r=r, g=g, b=b)
+
+    return keys
+
+
+@app.command(name="theme-compile")
+def theme_compile(
+    source: Annotated[Path, typer.Argument(help="Theme source JSON file.")],
+    layout: Annotated[
+        Path | None,
+        typer.Option("--layout", help="Layout JSON [default: bundled simple.json]."),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Output file [default: stdout]."),
+    ] = None,
+    keymap: Annotated[
+        Path | None,
+        typer.Option("--keymap", help="Keymap JSON [default: bundled keymap.json]."),
+    ] = None,
+) -> None:
+    """Compile a theme source into a 144-slot per-key JSON file.
+
+    See src/ak820ctl/data/README.md for theme source format.
+    """
+    if not source.exists():
+        console.print(f"[red]Source file not found:[/] {source}")
+        raise typer.Exit(1)
+    try:
+        theme = ThemeSource.model_validate_json(source.read_text(encoding="utf-8"))
+        keymap_dict = _load_keymap(keymap)
+        layout_dict = _load_layout(layout)
+        keys = _compile_theme(theme, layout_dict, keymap_dict)
+    except (ValueError, ValidationError, OSError) as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+    out_json = json.dumps([k.model_dump() for k in keys], indent=2) + "\n"
+    if output is None:
+        console.print(out_json, end="", highlight=False)
+    else:
+        output.write_text(out_json, encoding="utf-8")
+        console.print(f"[green]Compiled theme written to:[/] {output}")
 
 
 @app.command()
