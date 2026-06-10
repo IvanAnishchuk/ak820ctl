@@ -55,6 +55,7 @@ dev = [
     "lxml>=5.0",
     "lxml-stubs>=0.5.1",
     "types-Pillow>=10.0",
+    "diff-cover>=9.0",
 ]
 
 [build-system]

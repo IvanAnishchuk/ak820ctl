@@ -17,6 +17,7 @@
 #   uv run ninja -C builddir ty-check.txt           # Type check: ty
 #   uv run ninja -C builddir mypy-strict.txt        # Type check: mypy strict (+ any-exprs, lineprecision, linecount, linecoverage, html, txt, xml, cobertura, junit, jsonl)
 #   uv run ninja -C builddir mypy-paranoid.txt      # Type check: mypy strict + every --disallow-any-* flag (allowed to fail)
+#   uv run ninja -C builddir diff-cover-mypy.json   # PR type-precision gating from mypy-strict-cobertura/cobertura.xml
 #   uv run ninja -C builddir pyright-recommended.txt # Type check: basedpyright
 #   uv run ninja -C builddir requirements           # Lock export + SBOM
 #
@@ -257,6 +258,30 @@ cat "$d/mypy-paranoid.txt"
 '''.format(src_root, build_root, mypy_paranoid_flags),
   ],
   build_always_stale: true,
+  console: true,
+  build_by_default: false,
+)
+
+# ── Diff coverage: mypy ───────────────────────────────────────────────────
+# Uses the mypy-strict cobertura report to gate per-PR type precision the
+# same way line coverage is gated. Override the base branch with the
+# DIFF_BASE env var (defaults to whatever diff-cover picks itself, which
+# is usually `origin/main`).
+#
+#   DIFF_BASE=origin/main uv run ninja -C builddir diff-cover-mypy.json
+
+custom_target(
+  'diff-cover-mypy',
+  output: ['diff-cover-mypy.json', 'diff-cover-mypy.md'],
+  command: [
+    bash, '-c',
+    '''cd @0@
+cov="@1@/mypy-strict-cobertura/cobertura.xml"
+base="${DIFF_BASE:-}"
+if [ ! -f "$cov" ]; then echo "No mypy cobertura at $cov — run mypy-strict first."; exit 1; fi
+uv run diff-cover "$cov" ${base:+--compare-branch="$base"} --format markdown:@1@/diff-cover-mypy.md,json:@1@/diff-cover-mypy.json
+'''.format(src_root, build_root),
+  ],
   console: true,
   build_by_default: false,
 )

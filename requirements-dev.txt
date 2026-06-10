@@ -69,6 +69,20 @@ cfgv==3.5.0 \
     --hash=sha256:a8dc6b26ad22ff227d2634a65cb388215ce6cc96bbcc5cfde7641ae87e8dacc0 \
     --hash=sha256:d5b1034354820651caa73ede66a6294d6e95c1b00acc5e9b098e917404669132
     # via pre-commit
+chardet==7.4.3 \
+    --hash=sha256:0ac3bf11c645734a1701a3804e43eabd98851838192267d08c353a834ab79fea \
+    --hash=sha256:1173b74051570cf08099d7429d92e4882d375ad4217f92a6e5240ccfb26f231e \
+    --hash=sha256:27cc23da03630cdecc9aa81a895aa86629c211f995cd57651f0fbc280717bf93 \
+    --hash=sha256:457f619882ba66327d4d8d14c6c342269bdb1e4e1c38e8117df941d14d351b04 \
+    --hash=sha256:6e3bd9f936e04bae89c254262af08d9e5b98f805175ba1e29d454e6cba3107b7 \
+    --hash=sha256:9f3504c139a2ad544077dd2d9e412cd08b01786843d76997cd43bb6de311723c \
+    --hash=sha256:acc46d1b8b7d5783216afe15db56d1c179b9a40e5a1558bc13164c4fd20674c4 \
+    --hash=sha256:b95c934b9ad59e2ba8abb9be49df70d3ad1b0d95d864b9fdb7588d4fa8bd921c \
+    --hash=sha256:c77867f0c1cb8bd819502249fcdc500364aedb07881e11b743726fa2148e7b6e \
+    --hash=sha256:cc1d4eb92a4ec1c2df3b490836ffa46922e599d34ce0bb75cf41fd2bf6303d56 \
+    --hash=sha256:cf1efeaf65a6ef2f5b9cc3a1df6f08ba2831b369ccaa4c7018eaf90aa757bb11 \
+    --hash=sha256:d892d3dcd652fdef53e3d6327d39b17c0df40a899dfc919abaeb64c974497531
+    # via diff-cover
 charset-normalizer==3.4.7 \
     --hash=sha256:03853ed82eeebbce3c2abfdbc98c96dc205f32a79627688ac9a27370ea61a49c \
     --hash=sha256:0c96c3b819b5c3e9e165495db84d41914d6894d55181d2d108cc1a69bfc9cce0 \
@@ -166,6 +180,9 @@ defusedxml==0.7.1 \
     --hash=sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69 \
     --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
     # via py-serializable
+diff-cover==10.3.0 \
+    --hash=sha256:2e47d5ab3868d1e92131c11f364f3f4a8583c97123d3bbc6b6cc8ce0a4cc2202 \
+    --hash=sha256:474dbc63e815fbb7567d7b7ca5b104123e96129f25426ebdbc9a1bdbb935b2c6
 distlib==0.4.2 \
     --hash=sha256:baeb401c90f27acd15c4861ae0847d1e731c27ac3dbf4210643ba61fa1e813db \
     --hash=sha256:ca4cb11e5d746b5ec13c199cbf19ae27a241f89702b54e153a74332955446067
@@ -234,6 +251,7 @@ jinja2==3.1.6 \
     --hash=sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d \
     --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
     # via
+    #   diff-cover
     #   ossguard
     #   zensical
 libcst==1.8.6 \
@@ -540,6 +558,7 @@ pluggy==1.6.0 \
     --hash=sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3 \
     --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746
     # via
+    #   diff-cover
     #   pytest
     #   pytest-cov
 pre-commit==4.6.0 \
@@ -594,6 +613,7 @@ pygments==2.20.0 \
     --hash=sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f \
     --hash=sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176
     # via
+    #   diff-cover
     #   pytest
     #   rich
     #   textual

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- meson `diff-cover-mypy` ninja target: per-PR mypy type-precision
+  gating against `${DIFF_BASE:-origin/main}` using the
+  `mypy-strict-cobertura/cobertura.xml` cobertura report. Mirrors the
+  test-coverage `diff-cover` flow and emits both JSON and markdown.
+  `diff-cover` added as a dev dependency.
 - meson `mypy-paranoid` ninja target: same 11 reports as `mypy-strict`
   but with `--disallow-any-explicit / -decorated / -unimported`,
   `--warn-unreachable`, `--strict-bytes`, and
