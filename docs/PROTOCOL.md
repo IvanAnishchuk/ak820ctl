@@ -212,9 +212,28 @@ default out-of-box and the only one this document covers in detail.
 - Each key: position index + R, G, B (4 bytes per key)
 - Total payload: 576 bytes, sent in multiple 64-byte packets
 
-## Firmware Version Query (Command `0x01`)
+## Firmware Version / Device Info Query (Command `0x05` READ_ID)
 
-Response contains version at bytes 2-4: `major.minor.patch`
+The READ_ID command (`0x05`) returns a fixed 64-byte response carrying
+device identity + firmware version. After discarding the ACK that
+follows any SET_REPORT:
+
+| Bytes | Field |
+|-------|-------|
+| 1-2 | Capabilities (LE uint16, e.g. `0x3040`) |
+| 3-4 | Reserved |
+| 5-6 | USB VID (little-endian) |
+| 7-8 | USB PID (little-endian) |
+| 9-10 | **Firmware version** (LE uint16, encoded as `major << 8 \| minor`) |
+| 11-12 | End marker (`0xFFFF`) |
+
+So a live device reporting `bcdDevice 1.14` returns bytes 9-10 = `0x0E 0x01`
+(i.e. version `0x010E` = 1.14).
+
+Earlier revisions of this file claimed Command `0x01` returns a
+"major.minor.patch" triple at bytes 2-4. That was wrong on both axes —
+the command is `0x05` and the version is a 16-bit field, not a 3-byte
+triple. The ak820ctl decoder lives in `commands.py::get_device_info`.
 
 ## 2.4G Dongle Protocol
 

@@ -138,6 +138,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `docs/PROTOCOL.md` "Firmware Version Query" section was preserved
+  verbatim from a stale revision of the canonical umbrella — claimed
+  CMD `0x01` returns a `major.minor.patch` triple at bytes 2-4. Now
+  matches the corrected canonical: CMD `0x05` READ_ID with a 12-byte
+  response layout (capabilities, VID, PID, LE-uint16 firmware version,
+  end marker). The decoder in `commands.py::get_device_info` was
+  always correct; only the doc was stale.
 - LCD `upload_image` was leaving the device session state machine open
   (sequence was START → image-chunks → SAVE without END), so the next
   command on Interface 3 — e.g. a subsequent `perkey --load` — was
