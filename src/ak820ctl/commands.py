@@ -179,8 +179,8 @@ def set_sleep(device: hid.device | None = None, *, timeout: str = "never") -> No
             device.close()
 
 
-LIGHT_MODE_NAMES = {v: k for k, v in LIGHT_MODES.items()}
-DIRECTION_NAMES = {v: k for k, v in DIRECTIONS.items()}
+LIGHT_MODE_NAMES: dict[int, str] = {v: k for k, v in LIGHT_MODES.items()}
+DIRECTION_NAMES: dict[int, str] = {v: k for k, v in DIRECTIONS.items()}
 
 
 def get_device_info(device: hid.device | None = None) -> DeviceInfo:

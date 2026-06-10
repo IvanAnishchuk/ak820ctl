@@ -68,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Explicit `dict[int, str]` annotations on `commands.LIGHT_MODE_NAMES`
+  and `commands.DIRECTION_NAMES` to lock in the reverse-mapping types
+  (mypy already inferred them correctly; the annotation guards against
+  future drift).
 - `ThemeSource` and `KeyboardDump` use plain mutable defaults (`= {}`,
   `= DeviceInfo()`, `= LightingConfig()`) instead of
   `Field(default_factory=...)`; pydantic v2 deep-copies these
