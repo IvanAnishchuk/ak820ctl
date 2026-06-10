@@ -6,18 +6,25 @@ from datetime import datetime
 from typing import cast
 from unittest.mock import patch
 
+import pytest
+
 from ak820ctl.commands import (
     DIRECTION_NAMES,
     DIRECTIONS,
     LIGHT_MODE_NAMES,
     LIGHT_MODES,
     SLEEP_VALUES,
+    dump_settings,
     get_device_info,
     get_firmware_version,
     read_lighting,
+    restore_settings,
+    set_lighting,
+    set_sleep,
     sync_time,
 )
 from ak820ctl.hid import REPORT_ID
+from ak820ctl.models import DeviceInfo, KeyboardDump, LightingConfig
 from tests.conftest import HidDeviceMock, as_hid_device
 
 
@@ -226,3 +233,139 @@ def test_read_lighting_no_data() -> None:
         cfg = read_lighting(device=as_hid_device(mock_device))
 
     assert cfg.mode == "off"  # default LightingConfig
+
+
+# ── set_lighting ──────────────────────────────────────────────────────────────
+
+
+def test_set_lighting_unknown_mode_raises() -> None:
+    with pytest.raises(ValueError, match="Unknown mode 'bogus'"):
+        set_lighting(mode="bogus")
+
+
+def test_set_lighting_succeeds() -> None:
+    mock_device = HidDeviceMock()
+    set_lighting(
+        device=as_hid_device(mock_device),
+        mode="breath",
+        r=0xFF,
+        g=0x80,
+        b=0x40,
+        brightness=4,
+        speed=2,
+        direction="up",
+    )
+    # 1 START + 2 send_command (preamble + data) + 1 SAVE = 4 sends
+    assert mock_device.send_feature_report.call_count == 4
+    mock_device.close.assert_not_called()
+
+
+def test_set_lighting_opens_and_closes_device() -> None:
+    mock_device = HidDeviceMock()
+    with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
+        set_lighting(mode="static")
+    mock_device.close.assert_called_once()
+
+
+def test_set_lighting_unknown_direction_falls_back_to_left() -> None:
+    """Unknown directions silently coerce to 'left' (value 0)."""
+    mock_device = HidDeviceMock()
+    set_lighting(device=as_hid_device(mock_device), mode="static", direction="diagonal")
+    # The data packet is the 3rd send (after START and preamble). send_report
+    # prefixes the buf with a 0x00 hidapi report ID, so the direction byte at
+    # buf[11] (set_lighting layout) lands at index 12 on the wire.
+    data_payload = bytes(
+        cast("bytes | list[int]", mock_device.send_feature_report.call_args_list[2].args[0])
+    )
+    assert data_payload[12] == 0  # 'left' = 0
+
+
+# ── set_sleep ─────────────────────────────────────────────────────────────────
+
+
+def test_set_sleep_unknown_timeout_raises() -> None:
+    with pytest.raises(ValueError, match="Unknown timeout 'forever'"):
+        set_sleep(timeout="forever")
+
+
+def test_set_sleep_succeeds() -> None:
+    mock_device = HidDeviceMock()
+    set_sleep(device=as_hid_device(mock_device), timeout="5min")
+    # 1 START + 1 data + 1 SAVE = 3 sends
+    assert mock_device.send_feature_report.call_count == 3
+    mock_device.close.assert_not_called()
+
+
+def test_set_sleep_opens_and_closes_device() -> None:
+    mock_device = HidDeviceMock()
+    with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
+        set_sleep(timeout="never")
+    mock_device.close.assert_called_once()
+
+
+# ── dump_settings / restore_settings ──────────────────────────────────────────
+
+
+def _device_info_responder(mock_device: HidDeviceMock) -> None:
+    """Wire mock_device.get_feature_report to satisfy both get_device_info and
+    read_lighting (each does ack -> data)."""
+    id_ack = [0x00, 0x04, 0x05] + [0x00] * 62
+    id_data = [0x00] * 65
+    id_data[5] = 0x45  # VID lo
+    id_data[6] = 0x0C  # VID hi
+    id_data[7] = 0x09
+    id_data[8] = 0x80
+    id_data[9] = 0x14  # FW minor
+    id_data[10] = 0x01  # FW major
+    light_ack = [0x00, 0x04, 0x12] + [0x00] * 62
+    light_data = [0x00] * 65
+    light_data[1] = 0x01  # static
+    mock_device.get_feature_report.side_effect = [id_ack, id_data, light_ack, light_data]
+
+
+def test_dump_settings_opens_and_closes_device() -> None:
+    mock_device = HidDeviceMock()
+    _device_info_responder(mock_device)
+    with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
+        dump = dump_settings()
+    assert dump.device.firmware == "1.20"
+    assert dump.lighting.mode == "static"
+    mock_device.close.assert_called_once()
+
+
+def test_restore_settings_returns_actions_lighting_and_time() -> None:
+    mock_device = HidDeviceMock()
+    dump = KeyboardDump(
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        lighting=LightingConfig(mode="breath", r=0xFF, brightness=3),
+    )
+    actions = restore_settings(dump, device=as_hid_device(mock_device), skip_time=False)
+    assert "lighting: breath" in actions
+    assert "time: synced" in actions
+
+
+def test_restore_settings_skip_time() -> None:
+    mock_device = HidDeviceMock()
+    dump = KeyboardDump(lighting=LightingConfig(mode="off"))
+    actions = restore_settings(dump, device=as_hid_device(mock_device), skip_time=True)
+    assert "time: synced" not in actions
+
+
+def test_restore_settings_unknown_mode_falls_back_to_mode_value() -> None:
+    """If cfg.mode is a string like '0x1f' (unknown), restore_settings should
+    resolve via mode_value through LIGHT_MODE_NAMES."""
+    mock_device = HidDeviceMock()
+    # mode_value=0x01 is 'static'; cfg.mode 'mystery' is unknown, so we expect
+    # restore_settings to use mode_value (0x01) -> 'static'.
+    cfg = LightingConfig(mode="mystery", mode_value=0x01)
+    dump = KeyboardDump(lighting=cfg)
+    actions = restore_settings(dump, device=as_hid_device(mock_device), skip_time=True)
+    assert "lighting: static" in actions
+
+
+def test_restore_settings_opens_and_closes_device() -> None:
+    mock_device = HidDeviceMock()
+    dump = KeyboardDump(lighting=LightingConfig(mode="off"))
+    with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
+        _ = restore_settings(dump, skip_time=True)
+    mock_device.close.assert_called_once()
