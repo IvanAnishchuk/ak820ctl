@@ -139,3 +139,20 @@ def perkey_response_packets(keys: list[KeyColor]) -> list[list[int]]:
     """
     raw = build_perkey_data(keys)
     return [[0x00, *pkt] for pkt in raw]
+
+
+def keymap_response_packets(payload: bytes) -> list[list[int]]:
+    """Build 49 x 65-byte response packets for `CMD_READ_KEYMAP` (0x15).
+
+    `payload` is the raw 3,136-byte keymap buffer; the firmware splits it
+    into 49 x 64-byte packets, each prefixed by the hidapi 0x00 report-ID
+    byte. Shorter payloads pad with zero, longer ones are truncated.
+    """
+    chunks: list[list[int]] = []
+    for i in range(49):
+        start = i * 64
+        chunk = bytes(payload[start : start + 64])
+        if len(chunk) < 64:
+            chunk = chunk + b"\x00" * (64 - len(chunk))
+        chunks.append([0x00, *chunk])
+    return chunks
