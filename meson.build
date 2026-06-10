@@ -271,9 +271,14 @@ custom_target(
   ],
   command: [
     bash, '-c',
-    '''cd @0@
-uv export --format requirements-txt --no-emit-project --no-dev > @1@/requirements.txt
-uv export --format requirements-txt --no-emit-project          > @1@/requirements-dev.txt
+    # Run from build_root with a relative --output-file so the command-line
+    # uv embeds in the header matches scripts/regen_requirements.py and the
+    # dependabot-regen workflow byte-for-byte (absolute paths and stdout
+    # redirection both produce different headers). uv walks up to find
+    # pyproject.toml in src_root.
+    '''cd @1@
+uv export --format requirements-txt --no-emit-project --no-dev --output-file requirements.txt
+uv export --format requirements-txt --no-emit-project          --output-file requirements-dev.txt
 echo "Exported requirements to @1@/"
 '''.format(src_root, build_root),
   ],

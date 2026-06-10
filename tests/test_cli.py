@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import json
+from pathlib import Path
+from typing import cast
+from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
-from ak820ctl.cli import app
+from ak820ctl.cli import app, parse_hex_color, parse_key_spec
+from ak820ctl.models import KeyColor
+from ak820ctl.perkey import NUM_KEYS
 
 runner = CliRunner()
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+THEMES_DIR = REPO_ROOT / "src" / "ak820ctl" / "data" / "themes"
+LAYOUTS_DIR = REPO_ROOT / "src" / "ak820ctl" / "data" / "layouts"
+COMPILED_DIR = REPO_ROOT / "examples" / "perkey"
 
 
 def test_version_flag() -> None:
@@ -69,3 +80,288 @@ def test_time_invalid_format() -> None:
     result = runner.invoke(app, ["time", "--set", "not-a-time"])
     assert result.exit_code == 1
     assert "Cannot parse" in result.output
+
+
+# ---------------------------- theme-compile ----------------------------
+
+
+def test_theme_compile_to_stdout_matches_compiled_file() -> None:
+    """No --output: prints the compiled JSON to stdout, byte-identical."""
+    src = THEMES_DIR / "groups-solarized-theme.json"
+    expected = (COMPILED_DIR / "groups-solarized.json").read_text(encoding="utf-8")
+    result = runner.invoke(app, ["theme-compile", str(src)])
+    assert result.exit_code == 0
+    assert result.output == expected
+
+
+def test_theme_compile_to_output_file(tmp_path: Path) -> None:
+    src = THEMES_DIR / "groups-solarized-theme.json"
+    out = tmp_path / "out.json"
+    result = runner.invoke(app, ["theme-compile", str(src), "--output", str(out)])
+    assert result.exit_code == 0
+    assert "Compiled theme written to" in result.output
+    expected = (COMPILED_DIR / "groups-solarized.json").read_text(encoding="utf-8")
+    assert out.read_text(encoding="utf-8") == expected
+
+
+def test_theme_compile_with_explicit_layout(tmp_path: Path) -> None:
+    """Pastel themes need --layout perrow.json."""
+    src = THEMES_DIR / "rows-pastel-turquoise-theme.json"
+    layout = LAYOUTS_DIR / "perrow.json"
+    out = tmp_path / "out.json"
+    result = runner.invoke(
+        app,
+        ["theme-compile", str(src), "--layout", str(layout), "-o", str(out)],
+    )
+    assert result.exit_code == 0
+    expected = (COMPILED_DIR / "rows-pastel-turquoise.json").read_text(encoding="utf-8")
+    assert out.read_text(encoding="utf-8") == expected
+
+
+def test_theme_compile_missing_source() -> None:
+    result = runner.invoke(app, ["theme-compile", "/nonexistent/path.json"])
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
+
+
+def test_theme_compile_unknown_group(tmp_path: Path) -> None:
+    bogus = tmp_path / "bogus.json"
+    bogus.write_text(
+        json.dumps({"base": "#000000", "groups": {"not_a_real_group": "#ff0000"}}),
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["theme-compile", str(bogus)])
+    assert result.exit_code == 1
+    assert "not_a_real_group" in result.output
+
+
+def test_theme_compile_unknown_override(tmp_path: Path) -> None:
+    bogus = tmp_path / "bogus.json"
+    bogus.write_text(
+        json.dumps({"base": "#000000", "overrides": {"not_a_key": "#ff0000"}}),
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["theme-compile", str(bogus)])
+    assert result.exit_code == 1
+    assert "not_a_key" in result.output
+
+
+def test_theme_compile_hex_without_hash_rejected(tmp_path: Path) -> None:
+    """HexColor validation requires a leading '#'."""
+    bogus = tmp_path / "bogus.json"
+    bogus.write_text(json.dumps({"base": "ff0000"}), encoding="utf-8")
+    result = runner.invoke(app, ["theme-compile", str(bogus)])
+    assert result.exit_code == 1
+
+
+def test_theme_compile_malformed_hex(tmp_path: Path) -> None:
+    bogus = tmp_path / "bogus.json"
+    bogus.write_text(
+        json.dumps({"base": "#zzzzzz"}),
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["theme-compile", str(bogus)])
+    assert result.exit_code == 1
+
+
+# ---------------------------- stdin/stdout via `-` ----------------------------
+
+
+def test_theme_compile_dash_output_writes_to_stdout() -> None:
+    """`-o -` is explicit stdout and should match the no-`-o` default."""
+    src = THEMES_DIR / "groups-solarized-theme.json"
+    expected = (COMPILED_DIR / "groups-solarized.json").read_text(encoding="utf-8")
+    result = runner.invoke(app, ["theme-compile", str(src), "-o", "-"])
+    assert result.exit_code == 0
+    assert result.output == expected
+
+
+def test_theme_compile_dash_source_reads_from_stdin() -> None:
+    """`source = -` reads theme JSON from stdin."""
+    src = THEMES_DIR / "groups-solarized-theme.json"
+    expected = (COMPILED_DIR / "groups-solarized.json").read_text(encoding="utf-8")
+    result = runner.invoke(app, ["theme-compile", "-"], input=src.read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert result.output == expected
+
+
+def test_theme_compile_dash_source_and_dash_output_pipeline() -> None:
+    """Full `-` → `-` pipeline: stdin source, stdout output."""
+    src = THEMES_DIR / "groups-basic-theme.json"
+    expected = (COMPILED_DIR / "groups-basic.json").read_text(encoding="utf-8")
+    result = runner.invoke(
+        app, ["theme-compile", "-", "-o", "-"], input=src.read_text(encoding="utf-8")
+    )
+    assert result.exit_code == 0
+    assert result.output == expected
+
+
+def _all_red_payload() -> str:
+    return json.dumps([{"index": i, "r": 255, "g": 0, "b": 0} for i in range(NUM_KEYS)])
+
+
+@patch("ak820ctl.cli.write_perkey")
+def test_perkey_load_dash_reads_colors_from_stdin(mock_write: MagicMock) -> None:
+    """`perkey --load -` reads per-key JSON from stdin and writes it."""
+    result = runner.invoke(app, ["perkey", "--load", "-"], input=_all_red_payload())
+    assert result.exit_code == 0, result.output
+    assert "Loaded per-key colors from stdin" in result.output
+    mock_write.assert_called_once()
+    keys_arg = cast("list[KeyColor]", mock_write.call_args.args[0])
+    assert len(keys_arg) == NUM_KEYS
+    assert all(k.r == 255 and k.g == 0 and k.b == 0 for k in keys_arg)
+
+
+@patch("ak820ctl.cli.read_perkey_live")
+def test_perkey_save_dash_writes_to_stdout(mock_read: MagicMock) -> None:
+    """`perkey --save -` prints live per-key state to stdout instead of a file."""
+    mock_read.return_value = [KeyColor(index=i, r=1, g=2, b=3) for i in range(NUM_KEYS)]
+    result = runner.invoke(app, ["perkey", "--save", "-"])
+    assert result.exit_code == 0
+    data = cast("list[dict[str, int]]", json.loads(result.output))
+    assert len(data) == NUM_KEYS
+    assert data[0] == {"index": 0, "r": 1, "g": 2, "b": 3}
+    # No "saved to" banner when writing to stdout.
+    assert "saved to" not in result.output
+
+
+# ---------------------------- parse helpers ----------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("ff0000", (255, 0, 0)),
+        ("#00ff00", (0, 255, 0)),
+        ("0000FF", (0, 0, 255)),
+        ("#aabbcc", (0xAA, 0xBB, 0xCC)),
+    ],
+)
+def test_parse_hex_color_accepts_valid(text: str, expected: tuple[int, int, int]) -> None:
+    assert parse_hex_color(text) == expected
+
+
+@pytest.mark.parametrize("bad", ["fff", "ff00", "#zzzzzz", "", "ff00000"])
+def test_parse_hex_color_rejects_invalid(bad: str) -> None:
+    if bad == "#zzzzzz":
+        # right length, wrong chars — int() raises ValueError too
+        with pytest.raises(ValueError):
+            _ = parse_hex_color(bad)
+    else:
+        with pytest.raises(ValueError, match="6 hex digits"):
+            _ = parse_hex_color(bad)
+
+
+def test_parse_key_spec_valid() -> None:
+    assert parse_key_spec("42:ff0000", NUM_KEYS) == (42, (255, 0, 0))
+
+
+@pytest.mark.parametrize(
+    ("bad", "match"),
+    [
+        ("42ff0000", "expected INDEX:RRGGBB"),
+        ("144:ff0000", "0-143"),
+        ("-1:ff0000", "0-143"),
+    ],
+)
+def test_parse_key_spec_rejects(bad: str, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        _ = parse_key_spec(bad, NUM_KEYS)
+
+
+# ---------------------------- perkey command modes ----------------------------
+
+
+@patch("ak820ctl.cli.write_perkey")
+def test_perkey_all_sets_every_key(mock_write: MagicMock) -> None:
+    result = runner.invoke(app, ["perkey", "--all", "ff8800", "-b", "3"])
+    assert result.exit_code == 0, result.output
+    keys = cast("list[KeyColor]", mock_write.call_args.args[0])
+    assert len(keys) == NUM_KEYS
+    assert all(k.r == 0xFF and k.g == 0x88 and k.b == 0x00 for k in keys)
+    assert mock_write.call_args.kwargs["brightness"] == 3
+
+
+@patch("ak820ctl.cli.write_perkey")
+@patch("ak820ctl.cli.read_perkey_live")
+def test_perkey_key_overrides_specific_indices(
+    mock_read: MagicMock,
+    mock_write: MagicMock,
+) -> None:
+    mock_read.return_value = [KeyColor(index=i) for i in range(NUM_KEYS)]
+    result = runner.invoke(app, ["perkey", "-k", "5:ff0000", "-k", "7:00ff00"])
+    assert result.exit_code == 0, result.output
+    keys = cast("list[KeyColor]", mock_write.call_args.args[0])
+    assert keys[5].r == 255 and keys[5].g == 0
+    assert keys[7].g == 255 and keys[7].r == 0
+    assert keys[0].r == 0 and keys[0].g == 0
+
+
+def test_perkey_all_invalid_hex_exits_with_error() -> None:
+    result = runner.invoke(app, ["perkey", "--all", "xyz"])
+    assert result.exit_code == 1
+    assert "6 hex digits" in result.output
+
+
+def test_perkey_key_malformed_spec_exits_with_error() -> None:
+    result = runner.invoke(app, ["perkey", "-k", "no-colon"])
+    assert result.exit_code == 1
+    assert "INDEX:RRGGBB" in result.output
+
+
+@patch("ak820ctl.cli.read_perkey_live")
+def test_perkey_dump_prints_json(mock_read: MagicMock) -> None:
+    mock_read.return_value = [KeyColor(index=i, r=10, g=20, b=30) for i in range(NUM_KEYS)]
+    result = runner.invoke(app, ["perkey", "--dump"])
+    assert result.exit_code == 0
+    data = cast("list[dict[str, int]]", json.loads(result.output))
+    assert len(data) == NUM_KEYS
+    assert data[0] == {"index": 0, "r": 10, "g": 20, "b": 30}
+
+
+@patch("ak820ctl.cli.read_perkey_stored")
+def test_perkey_dump_stored_prints_json(mock_read_stored: MagicMock) -> None:
+    mock_read_stored.return_value = [KeyColor(index=i, r=5, g=5, b=5) for i in range(NUM_KEYS)]
+    result = runner.invoke(app, ["perkey", "--dump-stored"])
+    assert result.exit_code == 0
+    data = cast("list[dict[str, int]]", json.loads(result.output))
+    assert data[0]["r"] == 5
+
+
+@patch("ak820ctl.cli.read_perkey_live")
+def test_perkey_no_args_shows_no_active_when_all_black(mock_read: MagicMock) -> None:
+    mock_read.return_value = [KeyColor(index=i) for i in range(NUM_KEYS)]
+    result = runner.invoke(app, ["perkey"])
+    assert result.exit_code == 0
+    assert "No per-key colors active" in result.output
+
+
+@patch("ak820ctl.cli.read_perkey_live")
+def test_perkey_no_args_lists_active_keys(mock_read: MagicMock) -> None:
+    keys = [KeyColor(index=i) for i in range(NUM_KEYS)]
+    keys[3] = KeyColor(index=3, r=255, g=0, b=0)
+    keys[42] = KeyColor(index=42, r=0, g=255, b=0)
+    mock_read.return_value = keys
+    result = runner.invoke(app, ["perkey"])
+    assert result.exit_code == 0
+    assert "2 key(s) with color" in result.output
+    assert "ff0000" in result.output
+    assert "00ff00" in result.output
+
+
+def test_perkey_load_missing_file_exits_with_error() -> None:
+    result = runner.invoke(app, ["perkey", "--load", "/nonexistent/whatever.json"])
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
+
+
+@patch("ak820ctl.cli.read_perkey_live")
+def test_perkey_save_writes_to_file(mock_read: MagicMock, tmp_path: Path) -> None:
+    mock_read.return_value = [KeyColor(index=i, r=7, g=8, b=9) for i in range(NUM_KEYS)]
+    out = tmp_path / "saved.json"
+    result = runner.invoke(app, ["perkey", "--save", str(out)])
+    assert result.exit_code == 0
+    assert "saved to" in result.output.lower()
+    data = cast("list[dict[str, int]]", json.loads(out.read_text(encoding="utf-8")))
+    assert len(data) == NUM_KEYS
+    assert data[0] == {"index": 0, "r": 7, "g": 8, "b": 9}

@@ -1,0 +1,21 @@
+{
+  "base": "#000000",
+  "groups": {
+    "f_keys": "#00aae6",
+    "esc_del": "#ffb432",
+    "digits": "#0099cc",
+    "row1_accent": "#ff8250",
+    "letters_qwerty": "#0066cc",
+    "wrappers_qwerty": "#ffa050",
+    "punct_qwerty": "#ff7882",
+    "letters_asdf": "#336699",
+    "wrappers_asdf": "#ffaa32",
+    "punct_asdf": "#ff6e64",
+    "letters_zxcv": "#003366",
+    "wrappers_zxcv": "#ff961e",
+    "punct_zxcv": "#dc5a46",
+    "modifiers": "#008080",
+    "space": "#b4e6f0",
+    "nav": "#ffb450"
+  }
+}

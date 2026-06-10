@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime
+from importlib import resources
 from pathlib import Path
 from typing import Annotated
 
@@ -26,7 +28,8 @@ from ak820ctl.commands import (
 )
 from ak820ctl.display import MAX_FRAMES, MAX_SLOT, load_animation, load_image, upload_image
 from ak820ctl.hid import DISPLAY_CHUNK_SIZE, PID, VID, find_device
-from ak820ctl.models import KeyboardDump, KeyColor
+from ak820ctl.keys import KEY_INDEX, Key
+from ak820ctl.models import KeyboardDump, KeyColor, ThemeSource
 from ak820ctl.perkey import NUM_KEYS, read_perkey_live, read_perkey_stored, write_perkey
 
 app = typer.Typer(
@@ -256,7 +259,7 @@ def dump(
 HEX_RGB_LEN = 6
 
 
-def _parse_hex_color(color: str) -> tuple[int, int, int]:
+def parse_hex_color(color: str) -> tuple[int, int, int]:
     """Parse a hex color string like 'ff0000' into (R, G, B)."""
     c = color.lstrip("#")
     if len(c) != HEX_RGB_LEN:
@@ -265,7 +268,7 @@ def _parse_hex_color(color: str) -> tuple[int, int, int]:
     return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
 
 
-def _parse_key_spec(spec: str, num_keys: int) -> tuple[int, tuple[int, int, int]]:
+def parse_key_spec(spec: str, num_keys: int) -> tuple[int, tuple[int, int, int]]:
     """Parse 'INDEX:RRGGBB' into (index, (R, G, B))."""
     if ":" not in spec:
         msg = f"Invalid key spec: {spec} (expected INDEX:RRGGBB)"
@@ -275,15 +278,31 @@ def _parse_key_spec(spec: str, num_keys: int) -> tuple[int, tuple[int, int, int]
     if not 0 <= idx < num_keys:
         msg = f"Key index must be 0-{num_keys - 1}, got: {idx}"
         raise ValueError(msg)
-    return idx, _parse_hex_color(color_str)
+    return idx, parse_hex_color(color_str)
 
 
 _KEY_COLOR_LIST_ADAPTER = TypeAdapter(list[KeyColor])
 
+# Conventional sentinel: a single dash means stdin (when reading) or stdout
+# (when writing), so pipelines like `theme-compile X | perkey --load -` work
+# without needing /dev/stdin.
+STDIO_PATH = Path("-")
+
+
+def _is_stdio(path: Path) -> bool:
+    return str(path) == "-"
+
+
+def _read_input_bytes(path: Path) -> bytes:
+    """Read bytes from `path`, or stdin if `path` is `-`."""
+    if _is_stdio(path):
+        return sys.stdin.buffer.read()
+    return path.read_bytes()
+
 
 def _load_colors_file(path: Path, num_keys: int) -> list[KeyColor]:
-    """Load per-key colors from JSON file, validated via pydantic."""
-    entries = _KEY_COLOR_LIST_ADAPTER.validate_json(path.read_bytes())
+    """Load per-key colors from JSON, validated via pydantic. `-` means stdin."""
+    entries = _KEY_COLOR_LIST_ADAPTER.validate_json(_read_input_bytes(path))
     keys = [KeyColor(index=i) for i in range(num_keys)]
     for entry in entries:
         keys[entry.index] = entry
@@ -291,15 +310,19 @@ def _load_colors_file(path: Path, num_keys: int) -> list[KeyColor]:
 
 
 def _save_perkey_state(path: Path) -> None:
-    """Read live per-key state and save to JSON file."""
+    """Read live per-key state and save to JSON file. `-` means stdout."""
     try:
         keys_data = read_perkey_live()
     except RuntimeError as e:
         console.print(f"[red]Error:[/] {e}")
         raise typer.Exit(1) from None
-    data = [k.model_dump() for k in keys_data]
+    payload = json.dumps([k.model_dump() for k in keys_data], indent=2) + "\n"
+    if _is_stdio(path):
+        # Plain stdout, not rich UI: this is machine-readable JSON for a pipe.
+        print(payload, end="")  # noqa: T201
+        return
     try:
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        _ = path.write_text(payload, encoding="utf-8")
     except OSError as e:
         console.print(f"[red]Cannot write file:[/] {e}")
         raise typer.Exit(1) from None
@@ -367,21 +390,28 @@ def perkey(
 
     try:
         if all_color is not None:
-            r, g, b = _parse_hex_color(all_color)
+            r, g, b = parse_hex_color(all_color)
             keys_list = [KeyColor(index=i, r=r, g=g, b=b) for i in range(NUM_KEYS)]
             label = f"All {NUM_KEYS} keys set to #{all_color.lstrip('#')}"
         elif key is not None:
+            # Parse all specs up front so a malformed spec fails fast without
+            # making a device round-trip — also lets the test suite cover
+            # parse errors without a keyboard attached.
+            parsed_specs = [parse_key_spec(spec, NUM_KEYS) for spec in key]
             keys_list = list(read_perkey_live())
-            for spec in key:
-                idx, (r, g, b) = _parse_key_spec(spec, NUM_KEYS)
+            for idx, (r, g, b) in parsed_specs:
                 keys_list[idx] = KeyColor(index=idx, r=r, g=g, b=b)
             label = f"Updated {len(key)} key(s)"
         elif load is not None:
-            if not load.exists():
+            if not _is_stdio(load) and not load.exists():
                 console.print(f"[red]File not found:[/] {load}")
                 raise typer.Exit(1)
             keys_list = _load_colors_file(load, NUM_KEYS)
-            label = f"Loaded per-key colors from {load}"
+            label = (
+                "Loaded per-key colors from stdin"
+                if _is_stdio(load)
+                else (f"Loaded per-key colors from {load}")
+            )
     except (ValueError, TypeError, RuntimeError, ValidationError) as e:
         console.print(f"[red]Error:[/] {e}")
         raise typer.Exit(1) from None
@@ -408,6 +438,101 @@ def perkey(
         console.print(f"[bold]{len(active)} key(s) with color:[/]")
         for k in active:
             console.print(f"  [dim]{k.index:3d}:[/] #{k.r:02x}{k.g:02x}{k.b:02x}")
+
+
+def _read_data_text(*parts: str) -> str:
+    """Read a bundled data file by path components under `ak820ctl/data/`."""
+    traversable = resources.files("ak820ctl") / "data"
+    for p in parts:
+        traversable = traversable / p
+    return traversable.read_text(encoding="utf-8")
+
+
+_LAYOUT_ADAPTER = TypeAdapter(dict[str, list[Key]])
+
+
+def load_layout(path: Path | None = None) -> dict[str, list[Key]]:
+    """Load and validate a layout file. None uses bundled simple layout.
+
+    Each value list is coerced to `list[Key]`; an unknown key name raises
+    `pydantic.ValidationError` citing the bad name.
+    """
+    text = (
+        path.read_text(encoding="utf-8")
+        if path is not None
+        else _read_data_text("layouts", "simple.json")
+    )
+    return _LAYOUT_ADAPTER.validate_json(text)
+
+
+def compile_theme(
+    source: ThemeSource,
+    layout: dict[str, list[Key]],
+) -> list[KeyColor]:
+    """Build 144 KeyColor entries from a theme source.
+
+    Order of precedence (lowest first): base, groups, overrides.
+    Raises ValueError if a group name is not in the layout. Override key
+    names are validated at `ThemeSource` parse time (enum coercion).
+    """
+    br, bg, bb = parse_hex_color(source.base)
+    keys = [KeyColor(index=i, r=br, g=bg, b=bb) for i in range(NUM_KEYS)]
+
+    for group_name, color_hex in source.groups.items():
+        if group_name not in layout:
+            msg = f"Unknown group {group_name!r} (not defined in layout)"
+            raise ValueError(msg)
+        r, g, b = parse_hex_color(color_hex)
+        for key in layout[group_name]:
+            idx = KEY_INDEX[key]
+            keys[idx] = KeyColor(index=idx, r=r, g=g, b=b)
+
+    for key, color_hex in source.overrides.items():
+        r, g, b = parse_hex_color(color_hex)
+        idx = KEY_INDEX[key]
+        keys[idx] = KeyColor(index=idx, r=r, g=g, b=b)
+
+    return keys
+
+
+@app.command(name="theme-compile")
+def theme_compile(
+    source: Annotated[
+        Path,
+        typer.Argument(help="Theme source JSON file (`-` for stdin)."),
+    ],
+    layout: Annotated[
+        Path | None,
+        typer.Option("--layout", help="Layout JSON [default: bundled simple.json]."),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Output file [default: stdout, `-` is also stdout]."),
+    ] = None,
+) -> None:
+    """Compile a theme source into a 144-slot per-key JSON file.
+
+    Use `-` for `source` to read from stdin, or `-o -` to write to stdout
+    explicitly. See src/ak820ctl/data/README.md for theme source format.
+    """
+    if not _is_stdio(source) and not source.exists():
+        console.print(f"[red]Source file not found:[/] {source}")
+        raise typer.Exit(1)
+    try:
+        theme = ThemeSource.model_validate_json(_read_input_bytes(source))
+        layout_dict = load_layout(layout)
+        keys = compile_theme(theme, layout_dict)
+    except (ValueError, ValidationError, OSError) as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+    out_json = json.dumps([k.model_dump() for k in keys], indent=2) + "\n"
+    if output is None or _is_stdio(output):
+        # Plain stdout, not rich UI: this is machine-readable JSON for a pipe.
+        print(out_json, end="")  # noqa: T201
+    else:
+        _ = output.write_text(out_json, encoding="utf-8")
+        console.print(f"[green]Compiled theme written to:[/] {output}")
 
 
 @app.command()

@@ -1,0 +1,13 @@
+{
+  "base": "#000000",
+  "groups": {
+    "letters": "#bd93f9",
+    "f_keys": "#8be9fd",
+    "digits": "#50fa7b",
+    "punctuation": "#f1fa8c",
+    "wrappers": "#ffb86c",
+    "modifiers": "#ff5555",
+    "space": "#ff79c6",
+    "nav": "#6272a4"
+  }
+}

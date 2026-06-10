@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 — used at runtime in save/load methods
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+
+from ak820ctl.keys import Key  # noqa: TC001 — used at runtime in ThemeSource field type
+
+# Strict CSS-style hex color: `#` plus exactly 6 hex digits (case-insensitive).
+HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
 
 
 class DeviceInfo(BaseModel):
@@ -38,6 +44,22 @@ class KeyColor(BaseModel):
     r: int = Field(default=0, ge=0, le=255)
     g: int = Field(default=0, ge=0, le=255)
     b: int = Field(default=0, ge=0, le=255)
+
+
+class ThemeSource(BaseModel):
+    """Source for a theme: base color, per-group colors, per-key overrides.
+
+    Compiled by `theme-compile` into a 144-entry list of `KeyColor`. All colors
+    are strict `#RRGGBB` hex (case-insensitive, leading `#` required). Group
+    names must exist in the chosen layout; override names must be `Key` members.
+    Slots without a physical key are addressable as `idx_<N>` in `overrides`
+    (e.g. `idx_0`, `idx_14`, ..., `idx_143`). Order of precedence: base →
+    groups → overrides.
+    """
+
+    base: HexColor = "#000000"
+    groups: dict[str, HexColor] = Field(default_factory=dict)
+    overrides: dict[Key, HexColor] = Field(default_factory=dict)
 
 
 class KeyboardDump(BaseModel):

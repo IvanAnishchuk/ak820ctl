@@ -296,7 +296,7 @@ class TestCli:
                 assert sent_raw[off + 2] == (i * 2) % 256  # g
                 assert sent_raw[off + 3] == (i * 3) % 256  # b
 
-    @pytest.mark.parametrize("example", ["groups", "rainbow", "blocks"])
+    @pytest.mark.parametrize("example", ["groups-basic", "groups-rainbow", "rows-stealth"])
     def test_load_example_files(self, example: str) -> None:
         """Verify bundled example JSON files are valid and loadable."""
         example_path = Path(__file__).parent.parent / "examples" / "perkey" / f"{example}.json"
