@@ -92,6 +92,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   and `commands.DIRECTION_NAMES` to lock in the reverse-mapping types
   (mypy already inferred them correctly; the annotation guards against
   future drift).
+- Vendored docs (`docs/PROTOCOL.md`, `docs/FIRMWARE-HACKING.md`,
+  `docs/RESEARCH.md`) re-synced from the canonical
+  `ak820-experiments/` umbrella files (LCD chunk size 4123, new CMDs
+  `0x05`/`0x11`/`0x15`/`0x20`/`0x27`, `0x13 SET_LIGHTING` flash
+  persistence at `0x9800`, VIA-mode dual-identity variant, two-dispatch
+  firmware architecture, flash region map, 8-blob firmware family
+  table). Newly vendored from `ak820-experiments/ak820-re/`:
+  `docs/STATUS.md`, `docs/unknown-commands.md`,
+  `docs/firmware-analysis-helpers.md`, `docs/windows-driver-analysis.md`.
+  CLAUDE.md repo layout updated to reference the new files; future-epic
+  notes gained entries for keymap upload (CMDs `0x11`/`0x27`/`0x15`) and
+  the VIA-mode variant.
 - `ThemeSource` and `KeyboardDump` use plain mutable defaults (`= {}`,
   `= DeviceInfo()`, `= LightingConfig()`) instead of
   `Field(default_factory=...)`; pydantic v2 deep-copies these

@@ -1,5 +1,13 @@
 # AK820 Pro USB HID Protocol
 
+> Per-command analysis lives in
+> [`firmware-analysis-helpers.md`](firmware-analysis-helpers.md);
+> Windows-side reverse-engineering of the vendor tool lives in
+> [`windows-driver-analysis.md`](windows-driver-analysis.md).
+> See [`STATUS.md`](STATUS.md) for the canonical state of findings and
+> [`unknown-commands.md`](unknown-commands.md) for the per-CMD analysis of
+> debug/internal-test surface.
+
 ## Communication Architecture
 
 The keyboard exposes **4 USB HID interfaces**:
@@ -40,13 +48,23 @@ After sending a `SET_REPORT` (feature report with ID `0x04`), the device firmwar
 | `0x18` | Session START | Must be sent before any configuration |
 | `0xF0` | Session FINISH/END | Sent after configuration is complete |
 | `0x02` | Save/commit to flash | Persists changes to EEPROM |
-| `0x13` | Lighting mode config | See lighting packet format below |
+| `0x05` | READ_ID | Returns firmware version + capabilities |
+| `0x13` | Lighting mode config | Also writes flash at 0x9800 |
 | `0x17` | Sleep timer setting | |
 | `0x28` | **Time synchronization** | See time sync format below |
 | `0x72` | Image/animation transfer init | LCD screen |
-| `0x22` | Read custom per-key colors | From flash |
-| `0x23` | Upload custom per-key RGB data | |
+| `0x22` | Read custom per-key colors | From flash 0x9C00 |
+| `0x23` | Upload custom per-key RGB data | Writes flash at 0x9C00 |
 | `0xF5` | Read live per-key RGB state | |
+| `0x11` | **Default-layer keymap upload** | V1.13: writes flash at 0x9400. V1.28+: no-op. |
+| `0x15` | Read current keymap | 49 chunks × 64 B |
+| `0x20` | Custom-lighting palette upload preamble | Sets state byte = 0x32 |
+| `0x27` | **Alternate-layer keymap upload** | Writes flash at 0xAC00 |
+
+Other CMDs (`0x10`, `0x14`, `0x16`, `0x19`, `0x26`, `0x38`, `0xAB`, `0xE0`) exist
+in the firmware dispatch but the vendor Windows tool never sends them; treat as
+debug/internal-test surface. See [`unknown-commands.md`](unknown-commands.md)
+for the per-CMD analysis.
 
 ### Typical Command Sequence
 
@@ -147,12 +165,45 @@ This is how the clock on the LCD display gets set.
 - **Color format:** RGB565, little-endian (2 bytes/pixel)
 - **Total data:** 32,768 bytes
 - **Transfer interface:** Interface 2 (Usage Page `0xFF68`)
-- **Chunk size:** 4,096 bytes per output report
-- **Chunks:** 9 total (8 full + 1 partial)
+- **Chunk size on the wire:** 4,**123** bytes per chunk (4096 payload + 27-byte
+  trailer). Each chunk is split into 64-byte interrupt writes; the trailer
+  creates a short final packet that signals the chunk boundary.
+- **Chunks:** 9 total
 - **Header:** 256-byte GIF header prepended (frame count, timing)
-- **Animation:** Up to 141+ frames supported
+- **Animation:** Up to 141 frames supported
 - **Acknowledgement:** Each chunk acknowledged by device (300ms timeout)
 - **Initiation:** Send command `0x72` on Interface 3 first, then transfer data on Interface 2
+
+(Earlier revisions of this doc said 4,096 bytes per chunk — that was the
+payload, not the wire-level chunk size.)
+
+## Keymap Upload
+
+Per [`windows-driver-analysis.md`](windows-driver-analysis.md): the vendor
+Windows tool uploads keymaps via two CMDs depending on layer:
+
+| Layer | CMD | Flash address (V1.13) |
+|-------|-----|------------------------|
+| 0 (default / fn_layer 0) | `0x11` | `0x9400` (V1.13 only — no-op on V1.28+) |
+| 1+ (alternate / custom) | `0x27` | `0xAC00` |
+
+Sequence: `START (0x18) → 0x11 or 0x27 → 9 chunks × 64 B of per-key HID usage
+codes → SAVE (0x02) → FINISH (0xF0)`. Per-key encoding is 4 bytes per slot:
+`[type_tag, usage_low, usage_high, modifier]`. Type tags include
+`1` = HID keyboard, `2` = mouse, `3` = modifier, `6` = consumer/media, `7` = mouse
+button/wheel.
+
+## VIA-mode variant
+
+The AK820 Pro family also ships a separate USB identity:
+
+| VID | PID | Mode |
+|-----|-----|------|
+| `0x0C45` | `0x8009` | Proprietary (this document) |
+| `0x3151` | `0x4021` | VIA-compatible (`id_dynamic_keymap_*` over report ID `0x04`) |
+
+How to switch firmware modes is unknown. The proprietary identity is the
+default out-of-box and the only one this document covers in detail.
 
 ## Per-Key Custom RGB (Command `0x23`)
 
