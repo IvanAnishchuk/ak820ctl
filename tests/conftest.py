@@ -26,8 +26,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ak820ctl.perkey import build_perkey_data
+
 if TYPE_CHECKING:
     import hid
+
+    from ak820ctl.models import KeyColor
 
 
 class HidDeviceMock:
@@ -119,3 +123,16 @@ def device_info_packet(
     pkt[11] = 0xFF
     pkt[12] = 0xFF
     return pkt
+
+
+def perkey_response_packets(keys: list[KeyColor]) -> list[list[int]]:
+    """Build the 9 x 65-byte response packets that the device returns to
+    CMD_READ_PERKEY / CMD_READ_STORED, encoding the given `keys`.
+
+    Each entry on the wire is 4 bytes: [position, R, G, B]. The hidapi
+    layer prepends a 0x00 report-ID prefix to each packet, so the returned
+    payloads are 65 bytes (1 + 64). This is exactly the shape that
+    `parse_perkey_data` decodes back into a `list[KeyColor]`.
+    """
+    raw = build_perkey_data(keys)
+    return [[0x00, *pkt] for pkt in raw]
