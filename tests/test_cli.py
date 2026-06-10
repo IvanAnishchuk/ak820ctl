@@ -391,8 +391,10 @@ def test_time_set_with_time_only_uses_today(mock_dt: MagicMock, mock_sync: Magic
     across a midnight rollover between the test capture and the CLI call.
     """
     fixed = datetime(2025, 6, 11, 12, 0, 0)
-    mock_dt.now.return_value = fixed
-    mock_dt.strptime.side_effect = datetime.strptime
+    now_mock = cast("MagicMock", mock_dt.now)
+    strptime_mock = cast("MagicMock", mock_dt.strptime)
+    now_mock.return_value = fixed
+    strptime_mock.side_effect = datetime.strptime
     mock_sync.return_value = fixed
     result = runner.invoke(app, ["time", "--set", "14:30:45"])
     assert result.exit_code == 0
