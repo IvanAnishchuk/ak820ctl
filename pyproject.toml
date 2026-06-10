@@ -142,9 +142,10 @@ module = "hid"
 ignore_missing_imports = true
 
 [tool.basedpyright]
-pythonVersion = "3.14"
 typeCheckingMode = "recommended"
-extraPaths = ["stubs"]
+# Other settings (pythonVersion, venvPath, venv, extraPaths, include) live in
+# pyrightconfig.json so vanilla pyright (used by IDE/LSP integrations) and
+# basedpyright share one source of truth.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

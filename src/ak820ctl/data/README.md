@@ -2,8 +2,12 @@
 
 This directory holds the canonical data for the per-key theme system:
 
-- `keymap.json` — maps the keyboard's 144 LED slot indices to symbolic key names
-  (e.g. `"esc"`, `"q"`, `"space"`). Slots with no physical key are `null`.
+- `keymap.json` — index→name mapping for the 144 LED slots, consumed at import
+  time by `ak820ctl/keys.py` to build `KEY_INDEX`. The static counterpart is the
+  `Key` enum (every entry here must be a `Key` member; drift fails import).
+  Slots without a physical key use placeholder names `idx_0`, `idx_14`, ...,
+  `idx_143` so they remain addressable from theme `overrides`. Not user-
+  overridable at runtime.
 - `layouts/` — JSON files that group key names into named groups. Two ship:
   - `layouts/simple.json` — 8 groups (letters / f_keys / digits / punctuation /
     wrappers / modifiers / space / nav). Used by `groups-*-theme.json` sources.
@@ -36,11 +40,9 @@ the `indices` field of a theme source.
   },
   "overrides": {
     "esc": "#ff0000",
-    "space": "#ffffff"
-  },
-  "indices": {
-    "0": "#ff0000",
-    "14": "#0015ff"
+    "space": "#ffffff",
+    "idx_0": "#ff0000",
+    "idx_14": "#0015ff"
   }
 }
 ```
@@ -48,13 +50,10 @@ the `indices` field of a theme source.
 - `base` (default `"#000000"`): fallback for every slot.
 - `groups`: group-name → hex. Group names must exist in the chosen layout.
   Applied on top of `base`.
-- `overrides`: key symbolic name (from `keymap.json`) → hex. Wins over `groups`
-  and `base` for that specific key.
-- `indices`: stringified integer slot index 0-143 → hex. Wins over everything
-  else and is the only way to reach slots that aren't in `keymap.json`
-  (e.g. the buffer gaps used by rainbow patterns or the firmware-locked
-  underglow slots 128-143). JSON requires string keys, but they parse as
-  integers.
+- `overrides`: `Key` enum name → hex. Wins over `groups` and `base` for that
+  specific slot. Every one of the 144 slots has a name in `keymap.json`,
+  including buffer gaps and the firmware-locked underglow slots 128-143
+  (named `idx_<N>`), so any slot is addressable here.
 - All hex strings: **`#RRGGBB`** — leading `#` is required and only 6 hex
   digits are accepted (validated by the `HexColor` type).
 
