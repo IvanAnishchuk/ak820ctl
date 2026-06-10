@@ -16,6 +16,7 @@
 #   uv run ninja -C builddir ruff-format.log        # Lint: format check
 #   uv run ninja -C builddir ty-check.txt           # Type check: ty
 #   uv run ninja -C builddir mypy-strict.txt        # Type check: mypy strict (+ any-exprs, lineprecision, linecount, linecoverage, html, txt, xml, cobertura, junit, jsonl)
+#   uv run ninja -C builddir mypy-paranoid.txt      # Type check: mypy strict + every --disallow-any-* flag (allowed to fail)
 #   uv run ninja -C builddir pyright-recommended.txt # Type check: basedpyright
 #   uv run ninja -C builddir requirements           # Lock export + SBOM
 #
@@ -225,6 +226,39 @@ test(
   suite: ['typecheck', 'fast'],
   timeout: 60,
   workdir: src_root,
+)
+
+# ── Type check: mypy paranoid ─────────────────────────────────────────────
+# Same 11-output shape as mypy-strict but with every --disallow-any-*
+# flag enabled. Allowed to fail (build_by_default: false); the point is
+# to surface framework-imposed `Any` (typer.Option/Argument, pydantic
+# Field) separately from real type debt so a reader can tell at a glance
+# which sites are ours vs. third-party API surface.
+
+mypy_paranoid_flags = '--strict --warn-unreachable --warn-incomplete-stub --disallow-any-explicit --disallow-any-decorated --disallow-any-unimported --strict-equality-for-none --strict-bytes'
+
+custom_target(
+  'mypy-paranoid',
+  output: [
+    'mypy-paranoid.txt', 'mypy-paranoid.jsonl', 'mypy-paranoid.junit.xml',
+    'mypy-paranoid-html', 'mypy-paranoid-txt', 'mypy-paranoid-xml',
+    'mypy-paranoid-cobertura', 'mypy-paranoid-linecoverage',
+    'mypy-paranoid-lineprecision', 'mypy-paranoid-linecount', 'mypy-paranoid-any-exprs',
+  ],
+  command: [
+    bash, '-c',
+    '''cd @0@
+d="@1@"
+flags="@2@"
+rm -rf "$d"/mypy-paranoid*
+uv run mypy $flags src/ --junit-xml "$d/mypy-paranoid.junit.xml" --html-report "$d/mypy-paranoid-html" --txt-report "$d/mypy-paranoid-txt" --xml-report "$d/mypy-paranoid-xml" --cobertura-xml-report "$d/mypy-paranoid-cobertura" --linecoverage-report "$d/mypy-paranoid-linecoverage" --lineprecision-report "$d/mypy-paranoid-lineprecision" --linecount-report "$d/mypy-paranoid-linecount" --any-exprs-report "$d/mypy-paranoid-any-exprs" > "$d/mypy-paranoid.txt"; echo "  mypy paranoid: exit $?"; ls -l "$d/mypy-paranoid.txt"
+uv run mypy $flags src/ -O json > "$d/mypy-paranoid.jsonl"; echo "  mypy paranoid json: exit $?"; ls -l "$d/mypy-paranoid.jsonl"
+cat "$d/mypy-paranoid.txt"
+'''.format(src_root, build_root, mypy_paranoid_flags),
+  ],
+  build_always_stale: true,
+  console: true,
+  build_by_default: false,
 )
 
 # ── Type check: basedpyright ──────────────────────────────────────────────

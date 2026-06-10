@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- meson `mypy-paranoid` ninja target: same 11 reports as `mypy-strict`
+  but with `--disallow-any-explicit / -decorated / -unimported`,
+  `--warn-unreachable`, `--strict-bytes`, and
+  `--strict-equality-for-none` enabled. Allowed to fail; the value is
+  surfacing framework-imposed `Any` (typer/pydantic) separately from
+  real debt at a glance.
 - `theme-compile` subcommand: compile high-level theme source JSON
   (`base` + `groups` + `overrides`) into the 144-slot per-key JSON consumed
   by `perkey --load`. Bundled at `src/ak820ctl/data/` via hatchling and
