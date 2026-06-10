@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -11,7 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ak820ctl.cli import app, parse_hex_color, parse_key_spec
-from ak820ctl.models import KeyColor
+from ak820ctl.models import DeviceInfo, KeyboardDump, KeyColor, LightingConfig
 from ak820ctl.perkey import NUM_KEYS
 
 runner = CliRunner()
@@ -365,3 +366,163 @@ def test_perkey_save_writes_to_file(mock_read: MagicMock, tmp_path: Path) -> Non
     data = cast("list[dict[str, int]]", json.loads(out.read_text(encoding="utf-8")))
     assert len(data) == NUM_KEYS
     assert data[0] == {"index": 0, "r": 7, "g": 8, "b": 9}
+
+
+# ---------------------------- time ----------------------------
+
+
+@patch("ak820ctl.cli.sync_time")
+def test_time_set_with_full_datetime(mock_sync: MagicMock) -> None:
+    """`time --set "YYYY-MM-DD HH:MM:SS"` parses to datetime and passes through."""
+    expected = datetime(2025, 3, 15, 14, 30, 45)
+    mock_sync.return_value = expected
+    result = runner.invoke(app, ["time", "--set", "2025-03-15 14:30:45"])
+    assert result.exit_code == 0
+    assert "Clock synced" in result.output
+    assert mock_sync.call_args.kwargs["dt"] == expected
+
+
+@patch("ak820ctl.cli.sync_time")
+def test_time_set_with_time_only_uses_today(mock_sync: MagicMock) -> None:
+    """`time --set HH:MM:SS` parses with today's date filled in."""
+    now = datetime.now()
+    mock_sync.return_value = now
+    result = runner.invoke(app, ["time", "--set", "14:30:45"])
+    assert result.exit_code == 0
+    dt_arg = cast("datetime", mock_sync.call_args.kwargs["dt"])
+    assert dt_arg.year == now.year
+    assert dt_arg.month == now.month
+    assert dt_arg.day == now.day
+    assert (dt_arg.hour, dt_arg.minute, dt_arg.second) == (14, 30, 45)
+
+
+@patch("ak820ctl.cli.sync_time")
+def test_time_no_args_syncs_now(mock_sync: MagicMock) -> None:
+    """`time` with no args calls sync_time with dt=None (use system clock)."""
+    mock_sync.return_value = datetime.now()
+    result = runner.invoke(app, ["time"])
+    assert result.exit_code == 0
+    assert mock_sync.call_args.kwargs["dt"] is None
+
+
+@patch("ak820ctl.cli.sync_time", side_effect=RuntimeError("no device"))
+def test_time_runtime_error_exits_1(mock_sync: MagicMock) -> None:
+    del mock_sync
+    result = runner.invoke(app, ["time"])
+    assert result.exit_code == 1
+    assert "no device" in result.output
+
+
+# ---------------------------- light ----------------------------
+
+
+@patch("ak820ctl.cli.read_lighting")
+def test_light_show_displays_config(mock_read: MagicMock) -> None:
+    mock_read.return_value = LightingConfig(
+        mode="breath", r=0xFF, g=0x80, b=0x00, brightness=4, speed=2, direction="up", rainbow=True
+    )
+    result = runner.invoke(app, ["light", "--show"])
+    assert result.exit_code == 0
+    assert "breath" in result.output
+    assert "#ff8000" in result.output
+    assert "up" in result.output
+
+
+@patch("ak820ctl.cli.set_lighting")
+def test_light_static_set_succeeds(mock_set: MagicMock) -> None:
+    result = runner.invoke(app, ["light", "static", "--color", "ff8800", "--brightness", "4"])
+    assert result.exit_code == 0
+    assert "Lighting set" in result.output
+    assert mock_set.call_args.kwargs["mode"] == "static"
+    assert mock_set.call_args.kwargs["r"] == 0xFF
+    assert mock_set.call_args.kwargs["g"] == 0x88
+    assert mock_set.call_args.kwargs["b"] == 0x00
+    assert mock_set.call_args.kwargs["brightness"] == 4
+
+
+@patch("ak820ctl.cli.read_lighting", side_effect=RuntimeError("comm failure"))
+def test_light_show_runtime_error_exits_1(mock_read: MagicMock) -> None:
+    del mock_read
+    result = runner.invoke(app, ["light", "--show"])
+    assert result.exit_code == 1
+    assert "comm failure" in result.output
+
+
+@patch("ak820ctl.cli.set_lighting", side_effect=RuntimeError("no device"))
+def test_light_set_runtime_error_exits_1(mock_set: MagicMock) -> None:
+    del mock_set
+    result = runner.invoke(app, ["light", "static", "--color", "ff0000"])
+    assert result.exit_code == 1
+    assert "no device" in result.output
+
+
+# ---------------------------- sleep ----------------------------
+
+
+@patch("ak820ctl.cli.set_sleep")
+def test_sleep_succeeds(mock_set: MagicMock) -> None:
+    result = runner.invoke(app, ["sleep", "5min"])
+    assert result.exit_code == 0
+    assert "Sleep timer set" in result.output
+    assert mock_set.call_args.kwargs["timeout"] == "5min"
+
+
+@patch("ak820ctl.cli.set_sleep", side_effect=RuntimeError("no device"))
+def test_sleep_runtime_error_exits_1(mock_set: MagicMock) -> None:
+    del mock_set
+    result = runner.invoke(app, ["sleep", "1min"])
+    assert result.exit_code == 1
+    assert "no device" in result.output
+
+
+# ---------------------------- info ----------------------------
+
+
+@patch("ak820ctl.cli.get_device_info")
+@patch("ak820ctl.cli.find_device")
+def test_info_succeeds_prints_firmware(mock_find: MagicMock, mock_info: MagicMock) -> None:
+    mock_find.return_value = b"/dev/hidraw3"
+    mock_info.return_value = DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20")
+    result = runner.invoke(app, ["info"])
+    assert result.exit_code == 0
+    assert "Found AK820" in result.output
+    assert "/dev/hidraw3" in result.output
+    assert "v1.20" in result.output
+
+
+# ---------------------------- dump ----------------------------
+
+
+@patch("ak820ctl.cli.dump_settings")
+def test_dump_to_stdout(mock_dump: MagicMock) -> None:
+    mock_dump.return_value = KeyboardDump(
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        lighting=LightingConfig(mode="static", r=0xFF),
+    )
+    result = runner.invoke(app, ["dump"])
+    assert result.exit_code == 0
+    assert "1.20" in result.output
+    assert "static" in result.output
+
+
+@patch("ak820ctl.cli.dump_settings")
+def test_dump_to_file_writes_json(mock_dump: MagicMock, tmp_path: Path) -> None:
+    mock_dump.return_value = KeyboardDump(
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        lighting=LightingConfig(mode="breath"),
+    )
+    out = tmp_path / "settings.json"
+    result = runner.invoke(app, ["dump", "-o", str(out)])
+    assert result.exit_code == 0
+    assert "saved to" in result.output.lower()
+    data = cast("dict[str, dict[str, object]]", json.loads(out.read_text(encoding="utf-8")))
+    assert data["device"]["firmware"] == "1.20"
+    assert data["lighting"]["mode"] == "breath"
+
+
+@patch("ak820ctl.cli.dump_settings", side_effect=RuntimeError("no device"))
+def test_dump_runtime_error_exits_1(mock_dump: MagicMock) -> None:
+    del mock_dump
+    result = runner.invoke(app, ["dump"])
+    assert result.exit_code == 1
+    assert "no device" in result.output
