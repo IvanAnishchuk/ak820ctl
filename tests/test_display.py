@@ -190,14 +190,16 @@ class TestUploadImage:
 
     @patch("ak820ctl.display.open_display_device")
     @patch("ak820ctl.display.open_device")
+    @patch("ak820ctl.display.session_end")
     @patch("ak820ctl.display.session_save")
     @patch("ak820ctl.display.session_start")
     @patch("ak820ctl.display.send_command")
-    def test_sends_start_image_save(
+    def test_sends_start_image_save_end(
         self,
         mock_send_cmd: MagicMock,
         mock_start: MagicMock,
         mock_save: MagicMock,
+        mock_end: MagicMock,
         mock_open_dev: MagicMock,
         mock_open_disp: MagicMock,
     ) -> None:
@@ -213,6 +215,10 @@ class TestUploadImage:
         mock_start.assert_called_once_with(cmd_dev)
         mock_send_cmd.assert_called_once()
         mock_save.assert_called_once_with(cmd_dev)
+        # session_end is required so the device's session state machine doesn't
+        # leak into the next command — without it, a subsequent perkey --load
+        # was silently dropped and the keyboard stayed dark.
+        mock_end.assert_called_once_with(cmd_dev)
 
     @patch("ak820ctl.display.open_display_device")
     @patch("ak820ctl.display.open_device")

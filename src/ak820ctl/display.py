@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PIL import Image
 
@@ -18,6 +18,7 @@ from ak820ctl.hid import (
     open_device,
     open_display_device,
     send_command,
+    session_end,
     session_save,
     session_start,
 )
@@ -47,7 +48,7 @@ def _rgb565_pixel(r: int, g: int, b: int) -> int:
 
 def frame_to_rgb565(img: Image.Image) -> bytes:
     """Resize a PIL Image to display dimensions and convert to RGB565-LE bytes."""
-    resized = img.resize((DISPLAY_WIDTH, DISPLAY_HEIGHT), Image.Resampling.NEAREST)
+    resized: Image.Image = img.resize((DISPLAY_WIDTH, DISPLAY_HEIGHT), Image.Resampling.NEAREST)
     rgb_img = resized.convert("RGB")
     pixels = rgb_img.tobytes()
 
@@ -105,7 +106,10 @@ def load_animation(path: Path, *, max_frames: int = MAX_FRAMES) -> bytes:
 
         for i in range(n_frames):
             img.seek(i)
-            duration_ms: int = img.info.get("duration", 50)
+            # PIL stubs type info dict as `dict[str, Any]`; cast → object lets
+            # isinstance narrow it, with a safe fallback for non-int durations.
+            raw_duration = cast("object", img.info.get("duration", 50))
+            duration_ms = raw_duration if isinstance(raw_duration, int) else 50
             delay_val = max(1, min(255, duration_ms // 2))
             delays.append(delay_val)
 
@@ -187,15 +191,19 @@ def upload_image(
 
             # Output report: report ID 0x00 + 4096 bytes data
             report = b"\x00" + chunk
-            disp_device.write(report)
+            _ = disp_device.write(report)
             _read_display_ack(disp_device)
             time.sleep(FW_DELAY)
 
             if progress_callback is not None:
                 progress_callback(i + 1, n_chunks)
 
-        # Step 4: CMD_SAVE on Interface 3
+        # Step 4: CMD_SAVE + CMD_END on Interface 3 — END is required so the
+        # device's session state machine doesn't carry over into the next
+        # command (e.g. a subsequent `perkey --load` was silently no-op'd
+        # because START → SAVE was left dangling).
         session_save(cmd_device)
+        session_end(cmd_device)
     finally:
         if own_disp and disp_device is not None:
             disp_device.close()

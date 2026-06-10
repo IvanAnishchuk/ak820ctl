@@ -7,6 +7,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, StringConstraints
 
+from ak820ctl.keys import Key  # noqa: TC001 — used at runtime in ThemeSource field type
+
 # Strict CSS-style hex color: `#` plus exactly 6 hex digits (case-insensitive).
 HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
 
@@ -49,17 +51,15 @@ class ThemeSource(BaseModel):
 
     Compiled by `theme-compile` into a 144-entry list of `KeyColor`. All colors
     are strict `#RRGGBB` hex (case-insensitive, leading `#` required). Group
-    names must exist in the chosen layout; override names must exist in the
-    keymap. The `indices` field maps stringified integer indices (JSON spec
-    only allows string object keys — pydantic coerces them to `int` 0-143)
-    to raw slot overrides, used for patterns like rainbow that cover unnamed
-    slots. Order of precedence: base → groups → overrides → indices.
+    names must exist in the chosen layout; override names must be `Key` members.
+    Slots without a physical key are addressable as `idx_<N>` in `overrides`
+    (e.g. `idx_0`, `idx_14`, ..., `idx_143`). Order of precedence: base →
+    groups → overrides.
     """
 
     base: HexColor = "#000000"
     groups: dict[str, HexColor] = Field(default_factory=dict)
-    overrides: dict[str, HexColor] = Field(default_factory=dict)
-    indices: dict[int, HexColor] = Field(default_factory=dict)
+    overrides: dict[Key, HexColor] = Field(default_factory=dict)
 
 
 class KeyboardDump(BaseModel):

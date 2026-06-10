@@ -50,7 +50,7 @@ def build_perkey_data(keys: list[KeyColor]) -> list[bytes]:
         buf[off + 2] = key.g
         buf[off + 3] = key.b
 
-    packets = []
+    packets: list[bytes] = []
     for i in range(NUM_PACKETS):
         start = i * PACKET_SIZE
         packets.append(bytes(buf[start : start + PACKET_SIZE]))
