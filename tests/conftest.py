@@ -29,6 +29,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ak820ctl.hid import PACKET_SIZE
+from ak820ctl.keymap import NUM_KEYMAP_CHUNKS
 from ak820ctl.perkey import build_perkey_data
 
 if TYPE_CHECKING:
@@ -139,3 +141,22 @@ def perkey_response_packets(keys: list[KeyColor]) -> list[list[int]]:
     """
     raw = build_perkey_data(keys)
     return [[0x00, *pkt] for pkt in raw]
+
+
+def keymap_response_packets(payload: bytes) -> list[list[int]]:
+    """Build `NUM_KEYMAP_CHUNKS` x (PACKET_SIZE+1)-byte response packets
+    for `CMD_READ_KEYMAP` (0x15).
+
+    `payload` is the raw 3,136-byte keymap buffer; the firmware splits it
+    into PACKET_SIZE-byte packets, each prefixed by the hidapi 0x00
+    report-ID byte. Shorter payloads pad with zero, longer ones are
+    truncated.
+    """
+    chunks: list[list[int]] = []
+    for i in range(NUM_KEYMAP_CHUNKS):
+        start = i * PACKET_SIZE
+        chunk = bytes(payload[start : start + PACKET_SIZE])
+        if len(chunk) < PACKET_SIZE:
+            chunk = chunk + b"\x00" * (PACKET_SIZE - len(chunk))
+        chunks.append([0x00, *chunk])
+    return chunks

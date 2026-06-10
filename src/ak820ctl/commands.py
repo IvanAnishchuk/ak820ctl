@@ -21,6 +21,24 @@ from ak820ctl.models import DeviceInfo, KeyboardDump, LightingConfig
 if TYPE_CHECKING:
     import hid
 
+# Command opcodes (CMD byte at packet[1] following REPORT_ID).
+# Names follow docs/PROTOCOL.md and docs/STATUS.md. Session-control
+# (CMD_START/SAVE/END) live in hid.py; per-key (perkey.py) and LCD
+# (display.py) opcodes stay with their respective modules.
+CMD_READ_ID = 0x05  # Returns VID/PID/firmware + capabilities
+CMD_READ_LIGHTING = 0x12
+CMD_SET_LIGHTING = 0x13  # Also writes flash @ 0x9800 (persists power-cycle)
+CMD_SET_SLEEP = 0x17
+CMD_SET_TIME = 0x28
+
+# Reverse-engineered. CMD_READ_KEYMAP is wired through ak820ctl.keymap
+# (used by `keymap --dump`); the rest are parked for the keymap-write
+# path (plan2.md Tier E).
+CMD_KEYMAP_DEFAULT = 0x11  # V1.13 only — writes flash @ 0x9400
+CMD_READ_KEYMAP = 0x15  # 49 chunks x 64 B = 3,136 B
+CMD_CUSTOM_LIGHTING_PREAMBLE = 0x20  # Sets firmware state byte 0x32
+CMD_KEYMAP_ALT = 0x27  # Writes flash @ 0xAC00
+
 
 def sync_time(device: hid.device | None = None, dt: datetime | None = None) -> datetime:
     """Sync the keyboard clock to the given (or current local) time.
@@ -38,8 +56,8 @@ def sync_time(device: hid.device | None = None, dt: datetime | None = None) -> d
         # Step 1: START
         session_start(device)
 
-        # Step 2: CMD_TIME preamble (0x28)
-        preamble = make_packet(REPORT_ID, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)
+        # Step 2: CMD_SET_TIME preamble (0x28)
+        preamble = make_packet(REPORT_ID, CMD_SET_TIME, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)
         send_command(device, preamble)
 
         # Step 3: Time data packet (report ID = 0x00, not 0x04)
@@ -111,7 +129,12 @@ def set_lighting(  # noqa: PLR0913
     speed: int = 3,
     direction: str = "left",
 ) -> None:
-    """Set the keyboard lighting mode."""
+    """Set the keyboard lighting mode.
+
+    CMD 0x13 also writes the lighting config to flash at 0x9800, so the
+    setting persists across power cycles — there is no transient-only
+    variant.
+    """
     mode_val = LIGHT_MODES.get(mode)
     if mode_val is None:
         msg = f"Unknown mode '{mode}'. Available: {', '.join(LIGHT_MODES)}"
@@ -125,8 +148,10 @@ def set_lighting(  # noqa: PLR0913
     try:
         session_start(device)
 
-        # Step 1: CMD_LIGHTING preamble (0x13), arg2=0x01 means data follows
-        preamble = make_packet(REPORT_ID, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)
+        # Step 1: CMD_SET_LIGHTING preamble (0x13), arg2=0x01 means data follows
+        preamble = make_packet(
+            REPORT_ID, CMD_SET_LIGHTING, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+        )
         send_command(device, preamble)
 
         # Step 2: Lighting data payload (report ID = mode, NOT 0x04)
@@ -167,7 +192,7 @@ def set_sleep(device: hid.device | None = None, *, timeout: str = "never") -> No
 
         buf = bytearray(PACKET_SIZE)
         buf[0] = REPORT_ID
-        buf[1] = 0x17  # CMD_SLEEP
+        buf[1] = CMD_SET_SLEEP
         buf[2] = val
         buf[62] = 0xAA
         buf[63] = 0x55
@@ -199,7 +224,10 @@ def get_device_info(device: hid.device | None = None) -> DeviceInfo:
         device = open_device()
 
     try:
-        send_report(device, make_packet(REPORT_ID, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01))
+        send_report(
+            device,
+            make_packet(REPORT_ID, CMD_READ_ID, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01),
+        )
         packets = read_data(device, count=1)
         if not packets:
             return DeviceInfo()
@@ -236,7 +264,10 @@ def read_lighting(device: hid.device | None = None) -> LightingConfig:
         device = open_device()
 
     try:
-        send_report(device, make_packet(REPORT_ID, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01))
+        send_report(
+            device,
+            make_packet(REPORT_ID, CMD_READ_LIGHTING, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01),
+        )
         packets = read_data(device, count=1)
         if not packets:
             return LightingConfig()

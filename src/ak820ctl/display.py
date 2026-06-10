@@ -189,7 +189,14 @@ def upload_image(
             if len(chunk) < DISPLAY_CHUNK_SIZE:
                 chunk = chunk + b"\x00" * (DISPLAY_CHUNK_SIZE - len(chunk))
 
-            # Output report: report ID 0x00 + 4096 bytes data
+            # Output report on Interface 2: hidapi report-ID prefix 0x00 +
+            # 4096-byte payload. Canonical drivers (epomaker-ak820-pro,
+            # ajazz-keyboard-linux-cpp) frame this as 4123 wire bytes by
+            # appending a 27-byte 0xFF trailer — we send 4097 (4096 + ID
+            # byte) and rely on the trailing short-packet boundary, which
+            # is what the firmware actually checks. See docs/PROTOCOL.md
+            # §LCD for the canonical format; Tier D of plan2.md tracks
+            # aligning with it.
             report = b"\x00" + chunk
             _ = disp_device.write(report)
             _read_display_ack(disp_device)

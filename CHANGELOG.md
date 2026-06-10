@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `keymap` subcommand: reads the stored keymap buffer via CMD 0x15
+  (49 chunks x 64 bytes = 3,136 raw bytes). `keymap --dump` writes
+  `{"size", "hex"}` JSON to stdout; `keymap --save PATH` writes the
+  same to a file (`-` is stdout). Per-slot decoding
+  (`[type_tag, usage_low, usage_high, modifier]`) and the keymap
+  write path (CMDs 0x11 / 0x27) are not yet exposed — see plan2.md
+  Tier E. New `src/ak820ctl/keymap.py` module exposes
+  `read_keymap`, `parse_keymap_data`, `NUM_KEYMAP_CHUNKS`,
+  `KEYMAP_BYTES`.
 - `stubs/typer/__init__.pyi` — vendored type stubs for the typer surface
   used by `ak820ctl.cli` (`Typer`, `Option`, `Argument`, `Exit`,
   `command`/`callback` decorators). Drops mypy explicit-Any in `cli.py`
@@ -83,6 +92,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Named command opcodes are now exported as module-level constants
+  instead of bare hex literals. `commands.py` gains `CMD_READ_ID`,
+  `CMD_READ_LIGHTING`, `CMD_SET_LIGHTING`, `CMD_SET_SLEEP`,
+  `CMD_SET_TIME` and (future-only, not yet wired)
+  `CMD_KEYMAP_DEFAULT`, `CMD_READ_KEYMAP`,
+  `CMD_CUSTOM_LIGHTING_PREAMBLE`, `CMD_KEYMAP_ALT`. `hid.py` gains
+  `CMD_START`, `CMD_SAVE`, `CMD_END` (used by the session helpers) and
+  `VIA_VID`/`VIA_PID` for the VIA-mode hint. No behaviour change.
+- `commands.set_lighting` docstring now notes that CMD 0x13 persists
+  the lighting config to flash at 0x9800 — there is no transient-only
+  variant.
+- `hid.find_device` error message extended to mention the VIA-mode
+  dual identity (VID `0x3151` / PID `0x4021`) so a confused user sees
+  why their device enumerates without matching `0x0C45/0x8009`.
+- `display.upload_image` stale comment "Output report: report ID 0x00
+  + 4096 bytes data" rewritten to explain the wire-format relationship
+  to the canonical 4123-byte chunk (see docs/PROTOCOL.md §LCD and
+  plan2.md Tier D).
 - `types-Pillow` added as a dev dependency; the
   `# pyright: ignore[reportUnknownMemberType]` and explanatory comment
   on `display.frame_to_rgb565` are removed (Pillow's stubs cover

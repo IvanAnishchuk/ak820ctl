@@ -19,6 +19,17 @@ DISPLAY_USAGE_PAGE = 0xFF68
 DISPLAY_CHUNK_SIZE = 4096
 DISPLAY_ACK_TIMEOUT_MS = 300
 
+# Session-control opcodes (issued by session_start/save/end below).
+CMD_START = 0x18
+CMD_SAVE = 0x02
+CMD_END = 0xF0
+
+# VIA-mode dual-identity that AK820 Pro also enumerates as (see docs/PROTOCOL.md
+# §VIA-mode variant). We don't talk to this surface — surfaced in error
+# messages so a confused user knows what they're looking at.
+VIA_VID = 0x3151
+VIA_PID = 0x4021
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,7 +40,10 @@ def find_device() -> bytes:
             return dev["path"]
     msg = (
         f"AK820 not found (VID={VID:#06x} PID={PID:#06x} Interface {INTERFACE}). "
-        "Is the keyboard connected via USB?"
+        "Is the keyboard connected via USB? "
+        f"(If it enumerates as VID={VIA_VID:#06x} PID={VIA_PID:#06x} it's in "
+        "VIA mode — ak820ctl doesn't support that surface; mode-switch "
+        "mechanism still unknown, see docs/PROTOCOL.md.)"
     )
     raise RuntimeError(msg)
 
@@ -137,14 +151,14 @@ def read_data(device: hid.device, count: int = 1) -> list[list[int]]:
 
 def session_start(device: hid.device) -> None:
     """Send CMD_START (0x18)."""
-    send_command(device, make_packet(REPORT_ID, 0x18))
+    send_command(device, make_packet(REPORT_ID, CMD_START))
 
 
 def session_save(device: hid.device) -> None:
     """Send CMD_SAVE (0x02)."""
-    send_command(device, make_packet(REPORT_ID, 0x02))
+    send_command(device, make_packet(REPORT_ID, CMD_SAVE))
 
 
 def session_end(device: hid.device) -> None:
-    """Send CMD_FINISH (0xF0)."""
-    send_command(device, make_packet(REPORT_ID, 0xF0))
+    """Send CMD_END (0xF0)."""
+    send_command(device, make_packet(REPORT_ID, CMD_END))

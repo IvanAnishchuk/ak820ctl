@@ -28,6 +28,7 @@ from ak820ctl.commands import (
 )
 from ak820ctl.display import MAX_FRAMES, MAX_SLOT, load_animation, load_image, upload_image
 from ak820ctl.hid import DISPLAY_CHUNK_SIZE, PID, VID, find_device
+from ak820ctl.keymap import KEYMAP_BYTES, read_keymap
 from ak820ctl.keys import KEY_INDEX, Key
 from ak820ctl.models import KeyboardDump, KeyColor, ThemeSource
 from ak820ctl.perkey import NUM_KEYS, read_perkey_live, read_perkey_stored, write_perkey
@@ -438,6 +439,56 @@ def perkey(
         console.print(f"[bold]{len(active)} key(s) with color:[/]")
         for k in active:
             console.print(f"  [dim]{k.index:3d}:[/] #{k.r:02x}{k.g:02x}{k.b:02x}")
+
+
+def _format_keymap_payload(data: bytes) -> str:
+    """JSON envelope around raw keymap bytes: hex string + declared size."""
+    return json.dumps({"size": len(data), "hex": data.hex()}, indent=2) + "\n"
+
+
+@app.command()
+def keymap(
+    dump: Annotated[
+        bool,
+        typer.Option("--dump", "-d", help="Dump raw keymap bytes as JSON to stdout."),
+    ] = False,
+    save: Annotated[
+        Path | None,
+        typer.Option("--save", "-s", help="Save raw keymap bytes to JSON file (`-` is stdout)."),
+    ] = None,
+) -> None:
+    """Read the stored keymap buffer (3,136 raw bytes, CMD 0x15).
+
+    Per-slot decoding ([type_tag, usage_low, usage_high, modifier]) and
+    the write path (CMDs 0x11 / 0x27) are not yet exposed — see
+    plan2.md Tier E.
+    """
+    if not dump and save is None:
+        console.print("[yellow]No action selected.[/] Pass --dump for stdout or --save PATH.")
+        raise typer.Exit(1)
+
+    try:
+        data = read_keymap()
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1) from None
+
+    if len(data) != KEYMAP_BYTES:
+        console.print(f"[yellow]Warning:[/] expected {KEYMAP_BYTES} keymap bytes, got {len(data)}")
+
+    payload = _format_keymap_payload(data)
+
+    if save is None or _is_stdio(save):
+        # Plain stdout for pipe-friendliness; rich UI only for status lines.
+        print(payload, end="")  # noqa: T201
+        return
+
+    try:
+        _ = save.write_text(payload, encoding="utf-8")
+    except OSError as e:
+        console.print(f"[red]Cannot write file:[/] {e}")
+        raise typer.Exit(1) from None
+    console.print(f"[green]Keymap saved to:[/] {save}")
 
 
 def _read_data_text(*parts: str) -> str:
