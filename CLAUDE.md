@@ -215,6 +215,11 @@ here — flag them when relevant, don't silently implement during unrelated work
 - All CI checks must pass before merge (see .github/workflows/ci.yml)
 - Never squash merge PRs — use merge commits to preserve commit history
 - Never use `git add -A` or `git add .` — always stage individual files by name
+- **Always check Copilot review comments before declaring a PR done.** Run
+  `gh api repos/IvanAnishchuk/ak820ctl/pulls/<N>/comments` (inline review
+  comments) and `gh pr view <N> --json reviews` (top-level reviews) and
+  address each finding — fix or explicitly justify dismissing it — before
+  asking the user to merge. Don't rely on green CI alone.
 - **Always update `CHANGELOG.md` when you change behavior.** Any commit
   touching `src/` or `scripts/` (CLI surface, protocol, build/install
   flows) gets an entry under `## [Unreleased]` in the appropriate
