@@ -126,7 +126,7 @@ def test_theme_compile_missing_source() -> None:
 
 def test_theme_compile_unknown_group(tmp_path: Path) -> None:
     bogus = tmp_path / "bogus.json"
-    bogus.write_text(
+    _ = bogus.write_text(
         json.dumps({"base": "#000000", "groups": {"not_a_real_group": "#ff0000"}}),
         encoding="utf-8",
     )
@@ -137,7 +137,7 @@ def test_theme_compile_unknown_group(tmp_path: Path) -> None:
 
 def test_theme_compile_unknown_override(tmp_path: Path) -> None:
     bogus = tmp_path / "bogus.json"
-    bogus.write_text(
+    _ = bogus.write_text(
         json.dumps({"base": "#000000", "overrides": {"not_a_key": "#ff0000"}}),
         encoding="utf-8",
     )
@@ -149,14 +149,14 @@ def test_theme_compile_unknown_override(tmp_path: Path) -> None:
 def test_theme_compile_hex_without_hash_rejected(tmp_path: Path) -> None:
     """HexColor validation requires a leading '#'."""
     bogus = tmp_path / "bogus.json"
-    bogus.write_text(json.dumps({"base": "ff0000"}), encoding="utf-8")
+    _ = bogus.write_text(json.dumps({"base": "ff0000"}), encoding="utf-8")
     result = runner.invoke(app, ["theme-compile", str(bogus)])
     assert result.exit_code == 1
 
 
 def test_theme_compile_malformed_hex(tmp_path: Path) -> None:
     bogus = tmp_path / "bogus.json"
-    bogus.write_text(
+    _ = bogus.write_text(
         json.dumps({"base": "#zzzzzz"}),
         encoding="utf-8",
     )

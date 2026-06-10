@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,6 +21,7 @@ from ak820ctl.perkey import (
     parse_perkey_data,
     write_perkey,
 )
+from tests.conftest import HidDeviceMock, as_hid_device
 
 # ── Data building ────────────────────────────────────────────────────────────
 
@@ -58,7 +60,7 @@ class TestBuildPerkeyData:
 
     def test_wrong_count_raises(self) -> None:
         with pytest.raises(ValueError, match="Expected 144"):
-            build_perkey_data([KeyColor(index=0)] * 10)
+            _ = build_perkey_data([KeyColor(index=0)] * 10)
 
 
 # ── Data parsing ─────────────────────────────────────────────────────────────
@@ -101,8 +103,8 @@ class TestWritePerkey:
         mock_end: MagicMock,
         mock_set_lighting: MagicMock,
     ) -> None:
-        dev = MagicMock()
-        mock_open.return_value = dev
+        dev = HidDeviceMock()
+        mock_open.return_value = as_hid_device(dev)
 
         keys = [KeyColor(index=i, r=255) for i in range(NUM_KEYS)]
         write_perkey(keys, brightness=3)
@@ -110,7 +112,7 @@ class TestWritePerkey:
         mock_start.assert_called_once_with(dev)
         # 1 CMD_CUSTOM_LIGHT + 9 data packets = 10
         assert mock_send_cmd.call_count == 10
-        first_pkt = mock_send_cmd.call_args_list[0][0][1]
+        first_pkt = cast("list[int]", mock_send_cmd.call_args_list[0][0][1])
         assert first_pkt[0] == REPORT_ID
         assert first_pkt[1] == CMD_CUSTOM_LIGHT
         assert first_pkt[8] == 0x09
@@ -132,8 +134,8 @@ class TestWritePerkey:
         _mock_end: MagicMock,
         _mock_set_lighting: MagicMock,
     ) -> None:
-        dev = MagicMock()
-        write_perkey([KeyColor(index=i) for i in range(NUM_KEYS)], device=dev)
+        dev = HidDeviceMock()
+        write_perkey([KeyColor(index=i) for i in range(NUM_KEYS)], device=as_hid_device(dev))
         dev.close.assert_not_called()
 
 
@@ -164,13 +166,13 @@ class TestCli:
         mock_read: MagicMock,
         mock_open: MagicMock,
     ) -> None:
-        mock_open.return_value = MagicMock()
+        mock_open.return_value = as_hid_device(HidDeviceMock())
         mock_read.return_value = [[0x00] + [0] * PACKET_SIZE for _ in range(NUM_PACKETS)]
 
         runner = CliRunner()
         result = runner.invoke(app, ["perkey", "--dump"])
         assert result.exit_code == 0
-        data = json.loads(result.output)
+        data = cast("list[dict[str, int]]", json.loads(result.output))
         assert len(data) == NUM_KEYS
         assert set(data[0].keys()) >= {"index", "r", "g", "b"}
 
@@ -189,7 +191,7 @@ class TestCli:
         _mock_lighting: MagicMock,
         mock_open: MagicMock,
     ) -> None:
-        mock_open.return_value = MagicMock()
+        mock_open.return_value = as_hid_device(HidDeviceMock())
         runner = CliRunner()
         result = runner.invoke(app, ["perkey", "--all", "ff0000"])
         assert result.exit_code == 0
@@ -197,7 +199,7 @@ class TestCli:
     def test_load_succeeds(self, tmp_path: Path) -> None:
         colors_file = tmp_path / "colors.json"
         data = [{"index": i, "r": 255, "g": 0, "b": 0} for i in range(NUM_KEYS)]
-        colors_file.write_text(json.dumps(data))
+        _ = colors_file.write_text(json.dumps(data))
 
         with (
             patch("ak820ctl.perkey.open_device") as mock_open,
@@ -207,9 +209,8 @@ class TestCli:
             patch("ak820ctl.perkey.session_end"),
             patch("ak820ctl.perkey.set_lighting"),
         ):
-            mock_open.return_value = MagicMock()
-            runner = CliRunner()
-            result = runner.invoke(app, ["perkey", "--load", str(colors_file)])
+            mock_open.return_value = as_hid_device(HidDeviceMock())
+            result = CliRunner().invoke(app, ["perkey", "--load", str(colors_file)])
             assert result.exit_code == 0
 
     @patch("ak820ctl.perkey.open_device")
@@ -226,7 +227,7 @@ class TestCli:
         mock_open: MagicMock,
         tmp_path: Path,
     ) -> None:
-        mock_open.return_value = MagicMock()
+        mock_open.return_value = as_hid_device(HidDeviceMock())
         # Build mock response with known colors
         keys = [
             KeyColor(index=i, r=i % 256, g=(i * 2) % 256, b=(i * 3) % 256) for i in range(NUM_KEYS)
@@ -239,7 +240,7 @@ class TestCli:
         result = runner.invoke(app, ["perkey", "--save", str(out_file)])
         assert result.exit_code == 0
 
-        data = json.loads(out_file.read_text())
+        data = cast("list[dict[str, int]]", json.loads(out_file.read_text()))
         assert len(data) == NUM_KEYS
         assert data[0]["r"] == 0
         assert data[5]["r"] == 5
@@ -265,7 +266,7 @@ class TestCli:
             patch("ak820ctl.perkey.session_save"),
             patch("ak820ctl.perkey.session_end"),
         ):
-            mock_open.return_value = MagicMock()
+            mock_open.return_value = as_hid_device(HidDeviceMock())
             mock_read.return_value = mock_response
             runner = CliRunner()
             result = runner.invoke(app, ["perkey", "--save", str(out_file)])
@@ -280,7 +281,7 @@ class TestCli:
             patch("ak820ctl.perkey.session_end"),
             patch("ak820ctl.perkey.set_lighting"),
         ):
-            mock_open.return_value = MagicMock()
+            mock_open.return_value = as_hid_device(HidDeviceMock())
             runner = CliRunner()
             result = runner.invoke(app, ["perkey", "--load", str(out_file)])
             assert result.exit_code == 0
@@ -302,7 +303,7 @@ class TestCli:
         example_path = Path(__file__).parent.parent / "examples" / "perkey" / f"{example}.json"
         assert example_path.exists(), f"Example file not found: {example_path}"
 
-        data = json.loads(example_path.read_text())
+        data = cast("list[dict[str, int]]", json.loads(example_path.read_text()))
         assert len(data) == NUM_KEYS
         for entry in data:
             assert 0 <= entry["index"] <= 143

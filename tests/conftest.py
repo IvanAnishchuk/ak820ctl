@@ -21,9 +21,13 @@ named keyword arguments so a test only spells out the bytes it cares about.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 import pytest
+
+if TYPE_CHECKING:
+    import hid
 
 
 class HidDeviceMock:
@@ -62,6 +66,18 @@ def mock_hid_device() -> HidDeviceMock:
     `.side_effect = [...]` as usual.
     """
     return HidDeviceMock()
+
+
+def as_hid_device(mock: HidDeviceMock) -> hid.device:
+    """Cast a `HidDeviceMock` to `hid.device` for call sites typed against
+    the real `hid.device` class.
+
+    `HidDeviceMock` is structurally compatible (same method names, same
+    callable shapes) but pyright won't accept it nominally — there's no
+    inheritance. Routing through `object` first makes the cast
+    intentional (silences `reportInvalidCast`).
+    """
+    return cast("hid.device", cast("object", mock))
 
 
 # ── Feature-report payload factories ───────────────────────────────────────

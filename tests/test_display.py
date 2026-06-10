@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 — used at runtime (tmp_path fixture)
-from typing import TYPE_CHECKING, cast
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,9 +11,6 @@ from PIL import Image
 from typer.testing import CliRunner
 
 from ak820ctl.cli import app
-
-if TYPE_CHECKING:
-    import hid
 from ak820ctl.display import (
     CMD_IMAGE,
     DISPLAY_HEIGHT,
@@ -29,7 +26,7 @@ from ak820ctl.display import (
     upload_image,
 )
 from ak820ctl.hid import DISPLAY_CHUNK_SIZE, REPORT_ID
-from tests.conftest import HidDeviceMock
+from tests.conftest import HidDeviceMock, as_hid_device
 
 # ── RGB565 conversion ────────────────────────────────────────────────────────
 
@@ -367,12 +364,10 @@ class TestUploadImage:
             patch("ak820ctl.display.send_command"),
             patch("ak820ctl.display.session_save"),
         ):
-            # HidDeviceMock has no static relationship to hid.device; route
-            # through object to convince pyright the cast is intentional.
             upload_image(
                 self._make_data(),
-                cmd_device=cast("hid.device", cast("object", cmd_dev)),
-                disp_device=cast("hid.device", cast("object", disp_dev)),
+                cmd_device=as_hid_device(cmd_dev),
+                disp_device=as_hid_device(disp_dev),
             )
 
         # Should NOT close devices we didn't open
