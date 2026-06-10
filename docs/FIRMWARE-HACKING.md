@@ -1,5 +1,14 @@
 # AK820 Pro Firmware Hacking
 
+> For Phase 1 helper-function semantics (flash I/O, buffer management,
+> chunk handling, LED modes) see
+> [`firmware-analysis-helpers.md`](firmware-analysis-helpers.md). For the
+> canonical Phase 1–4 status and the per-CMD discoveries see
+> [`STATUS.md`](STATUS.md) and [`unknown-commands.md`](unknown-commands.md).
+> Full firmware-disassembly working files (V1.13 binary, per-blob diffs,
+> Ghidra projects, dispatch extractor) live out-of-tree in the
+> `ak820-experiments/ak820-re/` reverse-engineering repo.
+
 ## Chipset Details
 
 The AK820 Pro uses a **Sonix SN32F299** (branded as HFD80CP100) ARM Cortex-M MCU. This is the same chip family used across many budget/mid-range mechanical keyboards.
@@ -15,9 +24,46 @@ The AK820 Pro uses a **Sonix SN32F299** (branded as HFD80CP100) ARM Cortex-M MCU
 
 ## Stock Firmware
 
-The `fpb/ajazz-ak820-pro` repo contains stock firmware binaries:
-- `AJAZZ_AK820PRO_PID_8009_V1.13_SN32F290.bin`
-- Cross-compatible firmware from other keyboards using the same chipset
+The `fpb/ajazz-ak820-pro` repo contains stock firmware binaries for 8 family
+members:
+
+| Blob | Notable handler differences vs V1.13 |
+|------|--------------------------------------|
+| `AJAZZ_AK820PRO_..._V1.13_...bin` | The "reference" — only firmware with `cmd_0x11 → flash@0x9400` and `cmd_0x19` (BT-flag set) in its dispatch |
+| `JAMESDONKEY_RS2_3.0_..._V1.28_...bin` | Newest blob, same shape as V1.13 except no `cmd_0x11` flash write |
+| `LANGTU_LT84_..._V1.03_...bin`, `LEOBOD_K81PRO_..._V1.09_...bin`, `QK75N_..._V1.13_...bin`, `WOMIER_..._V1.01_...bin`, `HELLOGANSS_XS75T_..._V1.41_...bin`, `HELLOGANSS_XS75T_..._V1.42_...bin` | Same command set as V1.13, varying flash code layouts |
+
+For the per-CMD address matrix across all 8 blobs and the divergence
+narrative, see the working files in the `ak820-re/` reverse-engineering
+repo (`firmware-blobs/diff.md`,
+`firmware-blobs/cross-firmware-divergences.md`).
+
+## Dispatch architecture
+
+The vendor firmware uses **two separate dispatch chains**, not a single
+fall-through. They are two independent state machines:
+
+- **First dispatch** (`h_61c8_dispatcher` @ V1.13 `0x61C8`): runs on host
+  SET_REPORT. The write-side / immediate-action half. CMDs that write flash
+  (`0x11` keymap default, `0x13` lighting, `0x23` per-key RGB, `0x27` keymap
+  alt) call `h_18002_flash_io(<region>)` here.
+- **Second dispatch** (separate function at V1.13 `0x645E`): runs as the
+  GET_REPORT response producer. The read-side. Read CMDs (`0x10`, `0x12`,
+  `0x14`, `0x15`, `0x16`, `0x22`, `0x26`, `0xF5`) queue a buffer via
+  `h_6190(buf, off, count)` here for the next outbound chunks.
+
+A CMD can live in both chains, one, or neither. The Phase 2 extractor
+script in the `ak820-re/` repo (`extract_dispatch.py`) finds both chains
+by pattern.
+
+## Flash region map (V1.13)
+
+| Address | Written by | Purpose |
+|---------|-----------|---------|
+| `0x9400` | `cmd_0x11` (V1.13 only) | Default-layer keymap |
+| `0x9800` | `cmd_0x13 SET_LIGHTING` | Lighting mode persistence |
+| `0x9C00` | `cmd_0x23 WRITE_PERKEY` | Per-key RGB palette |
+| `0xAC00` | `cmd_0x27` | Alternate-layer keymap (and possibly other config) |
 
 ## Firmware Dump
 

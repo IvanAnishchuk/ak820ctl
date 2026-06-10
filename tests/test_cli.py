@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -11,7 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ak820ctl.cli import app, parse_hex_color, parse_key_spec
-from ak820ctl.models import KeyColor
+from ak820ctl.models import DeviceInfo, KeyboardDump, KeyColor, LightingConfig
 from ak820ctl.perkey import NUM_KEYS
 
 runner = CliRunner()
@@ -126,7 +127,7 @@ def test_theme_compile_missing_source() -> None:
 
 def test_theme_compile_unknown_group(tmp_path: Path) -> None:
     bogus = tmp_path / "bogus.json"
-    bogus.write_text(
+    _ = bogus.write_text(
         json.dumps({"base": "#000000", "groups": {"not_a_real_group": "#ff0000"}}),
         encoding="utf-8",
     )
@@ -137,7 +138,7 @@ def test_theme_compile_unknown_group(tmp_path: Path) -> None:
 
 def test_theme_compile_unknown_override(tmp_path: Path) -> None:
     bogus = tmp_path / "bogus.json"
-    bogus.write_text(
+    _ = bogus.write_text(
         json.dumps({"base": "#000000", "overrides": {"not_a_key": "#ff0000"}}),
         encoding="utf-8",
     )
@@ -149,14 +150,14 @@ def test_theme_compile_unknown_override(tmp_path: Path) -> None:
 def test_theme_compile_hex_without_hash_rejected(tmp_path: Path) -> None:
     """HexColor validation requires a leading '#'."""
     bogus = tmp_path / "bogus.json"
-    bogus.write_text(json.dumps({"base": "ff0000"}), encoding="utf-8")
+    _ = bogus.write_text(json.dumps({"base": "ff0000"}), encoding="utf-8")
     result = runner.invoke(app, ["theme-compile", str(bogus)])
     assert result.exit_code == 1
 
 
 def test_theme_compile_malformed_hex(tmp_path: Path) -> None:
     bogus = tmp_path / "bogus.json"
-    bogus.write_text(
+    _ = bogus.write_text(
         json.dumps({"base": "#zzzzzz"}),
         encoding="utf-8",
     )
@@ -365,3 +366,319 @@ def test_perkey_save_writes_to_file(mock_read: MagicMock, tmp_path: Path) -> Non
     data = cast("list[dict[str, int]]", json.loads(out.read_text(encoding="utf-8")))
     assert len(data) == NUM_KEYS
     assert data[0] == {"index": 0, "r": 7, "g": 8, "b": 9}
+
+
+# ---------------------------- time ----------------------------
+
+
+@patch("ak820ctl.cli.sync_time")
+def test_time_set_with_full_datetime(mock_sync: MagicMock) -> None:
+    """`time --set "YYYY-MM-DD HH:MM:SS"` parses to datetime and passes through."""
+    expected = datetime(2025, 3, 15, 14, 30, 45)
+    mock_sync.return_value = expected
+    result = runner.invoke(app, ["time", "--set", "2025-03-15 14:30:45"])
+    assert result.exit_code == 0
+    assert "Clock synced" in result.output
+    assert mock_sync.call_args.kwargs["dt"] == expected
+
+
+@patch("ak820ctl.cli.sync_time")
+@patch("ak820ctl.cli.datetime")
+def test_time_set_with_time_only_uses_today(mock_dt: MagicMock, mock_sync: MagicMock) -> None:
+    """`time --set HH:MM:SS` parses with today's date filled in.
+
+    `datetime.now()` is patched to a fixed value so the test can't flake
+    across a midnight rollover between the test capture and the CLI call.
+    """
+    fixed = datetime(2025, 6, 11, 12, 0, 0)
+    now_mock = cast("MagicMock", mock_dt.now)
+    strptime_mock = cast("MagicMock", mock_dt.strptime)
+    now_mock.return_value = fixed
+    strptime_mock.side_effect = datetime.strptime
+    mock_sync.return_value = fixed
+    result = runner.invoke(app, ["time", "--set", "14:30:45"])
+    assert result.exit_code == 0
+    dt_arg = cast("datetime", mock_sync.call_args.kwargs["dt"])
+    assert (dt_arg.year, dt_arg.month, dt_arg.day) == (2025, 6, 11)
+    assert (dt_arg.hour, dt_arg.minute, dt_arg.second) == (14, 30, 45)
+
+
+@patch("ak820ctl.cli.sync_time")
+def test_time_no_args_syncs_now(mock_sync: MagicMock) -> None:
+    """`time` with no args calls sync_time with dt=None (use system clock)."""
+    mock_sync.return_value = datetime.now()
+    result = runner.invoke(app, ["time"])
+    assert result.exit_code == 0
+    assert mock_sync.call_args.kwargs["dt"] is None
+
+
+@patch("ak820ctl.cli.sync_time", side_effect=RuntimeError("no device"))
+def test_time_runtime_error_exits_1(mock_sync: MagicMock) -> None:
+    del mock_sync
+    result = runner.invoke(app, ["time"])
+    assert result.exit_code == 1
+    assert "no device" in result.output
+
+
+# ---------------------------- light ----------------------------
+
+
+@patch("ak820ctl.cli.read_lighting")
+def test_light_show_displays_config(mock_read: MagicMock) -> None:
+    mock_read.return_value = LightingConfig(
+        mode="breath", r=0xFF, g=0x80, b=0x00, brightness=4, speed=2, direction="up", rainbow=True
+    )
+    result = runner.invoke(app, ["light", "--show"])
+    assert result.exit_code == 0
+    assert "breath" in result.output
+    assert "#ff8000" in result.output
+    assert "up" in result.output
+
+
+@patch("ak820ctl.cli.set_lighting")
+def test_light_static_set_succeeds(mock_set: MagicMock) -> None:
+    result = runner.invoke(app, ["light", "static", "--color", "ff8800", "--brightness", "4"])
+    assert result.exit_code == 0
+    assert "Lighting set" in result.output
+    assert mock_set.call_args.kwargs["mode"] == "static"
+    assert mock_set.call_args.kwargs["r"] == 0xFF
+    assert mock_set.call_args.kwargs["g"] == 0x88
+    assert mock_set.call_args.kwargs["b"] == 0x00
+    assert mock_set.call_args.kwargs["brightness"] == 4
+
+
+@patch("ak820ctl.cli.read_lighting", side_effect=RuntimeError("comm failure"))
+def test_light_show_runtime_error_exits_1(mock_read: MagicMock) -> None:
+    del mock_read
+    result = runner.invoke(app, ["light", "--show"])
+    assert result.exit_code == 1
+    assert "comm failure" in result.output
+
+
+@patch("ak820ctl.cli.set_lighting", side_effect=RuntimeError("no device"))
+def test_light_set_runtime_error_exits_1(mock_set: MagicMock) -> None:
+    del mock_set
+    result = runner.invoke(app, ["light", "static", "--color", "ff0000"])
+    assert result.exit_code == 1
+    assert "no device" in result.output
+
+
+# ---------------------------- sleep ----------------------------
+
+
+@patch("ak820ctl.cli.set_sleep")
+def test_sleep_succeeds(mock_set: MagicMock) -> None:
+    result = runner.invoke(app, ["sleep", "5min"])
+    assert result.exit_code == 0
+    assert "Sleep timer set" in result.output
+    assert mock_set.call_args.kwargs["timeout"] == "5min"
+
+
+@patch("ak820ctl.cli.set_sleep", side_effect=RuntimeError("no device"))
+def test_sleep_runtime_error_exits_1(mock_set: MagicMock) -> None:
+    del mock_set
+    result = runner.invoke(app, ["sleep", "1min"])
+    assert result.exit_code == 1
+    assert "no device" in result.output
+
+
+# ---------------------------- info ----------------------------
+
+
+@patch("ak820ctl.cli.get_device_info")
+@patch("ak820ctl.cli.find_device")
+def test_info_succeeds_prints_firmware(mock_find: MagicMock, mock_info: MagicMock) -> None:
+    mock_find.return_value = b"/dev/hidraw3"
+    mock_info.return_value = DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20")
+    result = runner.invoke(app, ["info"])
+    assert result.exit_code == 0
+    assert "Found AK820" in result.output
+    assert "/dev/hidraw3" in result.output
+    assert "v1.20" in result.output
+
+
+# ---------------------------- dump ----------------------------
+
+
+@patch("ak820ctl.cli.dump_settings")
+def test_dump_to_stdout(mock_dump: MagicMock) -> None:
+    mock_dump.return_value = KeyboardDump(
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        lighting=LightingConfig(mode="static", r=0xFF),
+    )
+    result = runner.invoke(app, ["dump"])
+    assert result.exit_code == 0
+    assert "1.20" in result.output
+    assert "static" in result.output
+
+
+@patch("ak820ctl.cli.dump_settings")
+def test_dump_to_file_writes_json(mock_dump: MagicMock, tmp_path: Path) -> None:
+    mock_dump.return_value = KeyboardDump(
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        lighting=LightingConfig(mode="breath"),
+    )
+    out = tmp_path / "settings.json"
+    result = runner.invoke(app, ["dump", "-o", str(out)])
+    assert result.exit_code == 0
+    assert "saved to" in result.output.lower()
+    data = cast("dict[str, dict[str, object]]", json.loads(out.read_text(encoding="utf-8")))
+    assert data["device"]["firmware"] == "1.20"
+    assert data["lighting"]["mode"] == "breath"
+
+
+@patch("ak820ctl.cli.dump_settings", side_effect=RuntimeError("no device"))
+def test_dump_runtime_error_exits_1(mock_dump: MagicMock) -> None:
+    del mock_dump
+    result = runner.invoke(app, ["dump"])
+    assert result.exit_code == 1
+    assert "no device" in result.output
+
+
+# ---------------------------- image ----------------------------
+
+
+@patch("ak820ctl.cli.upload_image")
+@patch("ak820ctl.cli.load_image")
+def test_image_succeeds(mock_load: MagicMock, mock_upload: MagicMock, tmp_path: Path) -> None:
+    """`image FILE` calls load_image, then upload_image with the bytes and slot."""
+    f = tmp_path / "smile.png"
+    _ = f.write_bytes(b"fake png bytes")
+    mock_load.return_value = b"\x00" * 1024  # any non-empty bytes
+    result = runner.invoke(app, ["image", str(f), "--slot", "2"])
+    assert result.exit_code == 0, result.output
+    assert "Image uploaded to slot 2" in result.output
+    mock_load.assert_called_once_with(f)
+    assert mock_upload.call_args.kwargs["slot"] == 2
+
+
+def test_image_slot_out_of_range(tmp_path: Path) -> None:
+    f = tmp_path / "img.png"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["image", str(f), "--slot", "0"])
+    assert result.exit_code == 1
+    assert "Slot must be 1-255" in result.output
+
+
+@patch("ak820ctl.cli.load_image", side_effect=OSError("bad file"))
+def test_image_oserror_on_load(mock_load: MagicMock, tmp_path: Path) -> None:
+    del mock_load
+    f = tmp_path / "img.png"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["image", str(f)])
+    assert result.exit_code == 1
+    assert "Cannot load image" in result.output
+
+
+@patch("ak820ctl.cli.upload_image", side_effect=RuntimeError("no device"))
+@patch("ak820ctl.cli.load_image")
+def test_image_runtime_error_exits_1(
+    mock_load: MagicMock, mock_upload: MagicMock, tmp_path: Path
+) -> None:
+    del mock_upload
+    mock_load.return_value = b"\x00" * 1024
+    f = tmp_path / "img.png"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["image", str(f)])
+    assert result.exit_code == 1
+    assert "no device" in result.output
+
+
+# ---------------------------- gif ----------------------------
+
+
+@patch("ak820ctl.cli.upload_image")
+@patch("ak820ctl.cli.load_animation")
+def test_gif_succeeds(mock_load: MagicMock, mock_upload: MagicMock, tmp_path: Path) -> None:
+    """`gif FILE` calls load_animation, then upload_image; prints frame count."""
+    f = tmp_path / "anim.gif"
+    _ = f.write_bytes(b"fake gif")
+    # data[0] is frame count; load_animation returns header + frames
+    mock_load.return_value = bytes([7]) + b"\x00" * 4096
+    result = runner.invoke(app, ["gif", str(f), "--slot", "3"])
+    assert result.exit_code == 0, result.output
+    assert "Loaded 7 frame" in result.output
+    assert "uploaded to slot 3" in result.output
+    assert mock_upload.call_args.kwargs["slot"] == 3
+
+
+def test_gif_slot_out_of_range(tmp_path: Path) -> None:
+    f = tmp_path / "anim.gif"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["gif", str(f), "--slot", "300"])
+    assert result.exit_code == 1
+    assert "Slot must be 1-255" in result.output
+
+
+def test_gif_max_frames_zero_rejected(tmp_path: Path) -> None:
+    f = tmp_path / "anim.gif"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["gif", str(f), "--max-frames", "0"])
+    assert result.exit_code == 1
+    assert "max-frames must be >= 1" in result.output
+
+
+@patch("ak820ctl.cli.load_animation", side_effect=OSError("bad gif"))
+def test_gif_oserror_on_load(mock_load: MagicMock, tmp_path: Path) -> None:
+    del mock_load
+    f = tmp_path / "anim.gif"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["gif", str(f)])
+    assert result.exit_code == 1
+    assert "Cannot load animation" in result.output
+
+
+# ---------------------------- restore ----------------------------
+
+
+@patch("ak820ctl.cli.restore_settings")
+def test_restore_succeeds(mock_restore: MagicMock, tmp_path: Path) -> None:
+    """`restore FILE` reads JSON, calls restore_settings, prints actions."""
+    dump = KeyboardDump(
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        lighting=LightingConfig(mode="breath"),
+    )
+    f = tmp_path / "backup.json"
+    dump.save(f)
+    mock_restore.return_value = ["time: synced", "lighting: breath"]
+    result = runner.invoke(app, ["restore", str(f)])
+    assert result.exit_code == 0
+    assert "time: synced" in result.output
+    assert "lighting: breath" in result.output
+    assert mock_restore.call_args.kwargs["skip_time"] is False
+
+
+@patch("ak820ctl.cli.restore_settings")
+def test_restore_skip_time_passes_through(mock_restore: MagicMock, tmp_path: Path) -> None:
+    dump = KeyboardDump(lighting=LightingConfig(mode="off"))
+    f = tmp_path / "backup.json"
+    dump.save(f)
+    mock_restore.return_value = ["lighting: off"]
+    result = runner.invoke(app, ["restore", str(f), "--skip-time"])
+    assert result.exit_code == 0
+    assert mock_restore.call_args.kwargs["skip_time"] is True
+
+
+def test_restore_missing_file_exits_1() -> None:
+    result = runner.invoke(app, ["restore", "/nonexistent/backup.json"])
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
+
+
+def test_restore_invalid_json_exits_1(tmp_path: Path) -> None:
+    f = tmp_path / "bad.json"
+    _ = f.write_text("not json", encoding="utf-8")
+    result = runner.invoke(app, ["restore", str(f)])
+    assert result.exit_code == 1
+    assert "Cannot read dump file" in result.output
+
+
+@patch("ak820ctl.cli.restore_settings", side_effect=RuntimeError("no device"))
+def test_restore_runtime_error_exits_1(mock_restore: MagicMock, tmp_path: Path) -> None:
+    del mock_restore
+    dump = KeyboardDump(lighting=LightingConfig(mode="off"))
+    f = tmp_path / "backup.json"
+    dump.save(f)
+    result = runner.invoke(app, ["restore", str(f)])
+    assert result.exit_code == 1
+    assert "no device" in result.output

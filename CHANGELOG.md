@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `stubs/typer/__init__.pyi` — vendored type stubs for the typer surface
+  used by `ak820ctl.cli` (`Typer`, `Option`, `Argument`, `Exit`,
+  `command`/`callback` decorators). Drops mypy explicit-Any in `cli.py`
+  from 267 → 234 and `__main__.py` from 1 → 0.
+- meson `diff-cover-mypy` ninja target: per-PR mypy type-precision
+  gating against `${DIFF_BASE:-origin/main}` using the
+  `mypy-strict-cobertura/cobertura.xml` cobertura report. Mirrors the
+  test-coverage `diff-cover` flow and emits both JSON and markdown.
+  `diff-cover` added as a dev dependency.
+- meson `mypy-paranoid` ninja target: same 11 reports as `mypy-strict`
+  but with `--disallow-any-explicit / -decorated / -unimported`,
+  `--warn-unreachable`, `--strict-bytes`, and
+  `--strict-equality-for-none` enabled. Allowed to fail; the value is
+  surfacing framework-imposed `Any` (typer/pydantic) separately from
+  real debt at a glance.
 - `theme-compile` subcommand: compile high-level theme source JSON
   (`base` + `groups` + `overrides`) into the 144-slot per-key JSON consumed
   by `perkey --load`. Bundled at `src/ak820ctl/data/` via hatchling and
@@ -68,6 +83,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `types-Pillow` added as a dev dependency; the
+  `# pyright: ignore[reportUnknownMemberType]` and explanatory comment
+  on `display.frame_to_rgb565` are removed (Pillow's stubs cover
+  `Image.resize` now). Drops `display.py` mypy explicit-Any from
+  33 → 26 and unimported-Any from 1 → 0.
+- Explicit `dict[int, str]` annotations on `commands.LIGHT_MODE_NAMES`
+  and `commands.DIRECTION_NAMES` to lock in the reverse-mapping types
+  (mypy already inferred them correctly; the annotation guards against
+  future drift).
+- Vendored docs (`docs/PROTOCOL.md`, `docs/FIRMWARE-HACKING.md`,
+  `docs/RESEARCH.md`) re-synced from the canonical
+  `ak820-experiments/` umbrella files (LCD chunk size 4123, new CMDs
+  `0x05`/`0x11`/`0x15`/`0x20`/`0x27`, `0x13 SET_LIGHTING` flash
+  persistence at `0x9800`, VIA-mode dual-identity variant, two-dispatch
+  firmware architecture, flash region map, 8-blob firmware family
+  table). Newly vendored from `ak820-experiments/ak820-re/`:
+  `docs/STATUS.md`, `docs/unknown-commands.md`,
+  `docs/firmware-analysis-helpers.md`, `docs/windows-driver-analysis.md`.
+  CLAUDE.md repo layout updated to reference the new files; future-epic
+  notes gained entries for keymap upload (CMDs `0x11`/`0x27`/`0x15`) and
+  the VIA-mode variant.
+- `ThemeSource` and `KeyboardDump` use plain mutable defaults (`= {}`,
+  `= DeviceInfo()`, `= LightingConfig()`) instead of
+  `Field(default_factory=...)`; pydantic v2 deep-copies these
+  per-instance so behaviour is unchanged. Pinned by new
+  `tests/test_models.py`. Drops `models.py` mypy explicit-Any from
+  288 → 204 and omitted-generics from 101 → 45.
+- meson `mypy-strict` ninja target now emits every mypy report format
+  (any-exprs, lineprecision, linecount, linecoverage, html, txt, xml,
+  cobertura, junit, jsonl) alongside the pass/fail log. `lxml` and
+  `lxml-stubs` added as dev dependencies to enable
+  `--cobertura-xml-report`.
 - `data/keymap.json`: digit names `"1".."0"` renamed to `digit_1..digit_0`
   so they're valid Python identifiers for the `Key` enum
 - `data/keymap.json`: previously-`null` slots renamed to stable
@@ -80,6 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Renamed CLI helpers `_parse_hex_color`, `_parse_key_spec`,
   `_compile_theme`, `_load_layout` to drop the leading underscore; they're
   stateless utilities tested from outside the module
+- Renamed `display._rgb565_pixel` to `display.rgb565_pixel` for the same
+  reason (stateless RGB565 pixel encoder, tested externally)
 - `perkey --key INDEX:RRGGBB` validates all specs before reading device
   state, so a malformed spec fails fast without making a device round-trip
 - meson `requirements` ninja target uses `--output-file <relative>` so
@@ -89,6 +138,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `docs/PROTOCOL.md` "Firmware Version Query" section was preserved
+  verbatim from a stale revision of the canonical umbrella — claimed
+  CMD `0x01` returns a `major.minor.patch` triple at bytes 2-4. Now
+  matches the corrected canonical: CMD `0x05` READ_ID with a 12-byte
+  response layout (capabilities, VID, PID, LE-uint16 firmware version,
+  end marker). The decoder in `commands.py::get_device_info` was
+  always correct; only the doc was stale.
 - LCD `upload_image` was leaving the device session state machine open
   (sequence was START → image-chunks → SAVE without END), so the next
   command on Interface 3 — e.g. a subsequent `perkey --load` — was

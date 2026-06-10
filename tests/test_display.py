@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 — used at runtime (tmp_path fixture)
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,33 +18,34 @@ from ak820ctl.display import (
     FRAME_BYTES,
     HEADER_SIZE,
     MAX_FRAMES,
-    _rgb565_pixel,
     build_header,
     frame_to_rgb565,
     load_animation,
     load_image,
+    rgb565_pixel,
     upload_image,
 )
 from ak820ctl.hid import DISPLAY_CHUNK_SIZE, REPORT_ID
+from tests.conftest import HidDeviceMock, as_hid_device
 
 # ── RGB565 conversion ────────────────────────────────────────────────────────
 
 
 class TestRgb565Pixel:
     def test_red(self) -> None:
-        assert _rgb565_pixel(255, 0, 0) == 0xF800
+        assert rgb565_pixel(255, 0, 0) == 0xF800
 
     def test_green(self) -> None:
-        assert _rgb565_pixel(0, 255, 0) == 0x07E0
+        assert rgb565_pixel(0, 255, 0) == 0x07E0
 
     def test_blue(self) -> None:
-        assert _rgb565_pixel(0, 0, 255) == 0x001F
+        assert rgb565_pixel(0, 0, 255) == 0x001F
 
     def test_white(self) -> None:
-        assert _rgb565_pixel(255, 255, 255) == 0xFFFF
+        assert rgb565_pixel(255, 255, 255) == 0xFFFF
 
     def test_black(self) -> None:
-        assert _rgb565_pixel(0, 0, 0) == 0x0000
+        assert rgb565_pixel(0, 0, 0) == 0x0000
 
 
 class TestFrameToRgb565:
@@ -100,15 +102,15 @@ class TestBuildHeader:
 
     def test_invalid_frame_count_zero(self) -> None:
         with pytest.raises(ValueError, match="out of range"):
-            build_header(0, [])
+            _ = build_header(0, [])
 
     def test_invalid_frame_count_too_high(self) -> None:
         with pytest.raises(ValueError, match="out of range"):
-            build_header(MAX_FRAMES + 1, [1] * (MAX_FRAMES + 1))
+            _ = build_header(MAX_FRAMES + 1, [1] * (MAX_FRAMES + 1))
 
     def test_mismatched_delays(self) -> None:
         with pytest.raises(ValueError, match="Expected 2 delay values"):
-            build_header(2, [1])
+            _ = build_header(2, [1])
 
 
 # ── Image loading ────────────────────────────────────────────────────────────
@@ -203,8 +205,8 @@ class TestUploadImage:
         mock_open_dev: MagicMock,
         mock_open_disp: MagicMock,
     ) -> None:
-        cmd_dev = MagicMock()
-        disp_dev = MagicMock()
+        cmd_dev = HidDeviceMock()
+        disp_dev = HidDeviceMock()
         disp_dev.read.return_value = None
         mock_open_dev.return_value = cmd_dev
         mock_open_disp.return_value = disp_dev
@@ -233,8 +235,8 @@ class TestUploadImage:
         mock_open_dev: MagicMock,
         mock_open_disp: MagicMock,
     ) -> None:
-        cmd_dev = MagicMock()
-        disp_dev = MagicMock()
+        cmd_dev = HidDeviceMock()
+        disp_dev = HidDeviceMock()
         disp_dev.read.return_value = None
         mock_open_dev.return_value = cmd_dev
         mock_open_disp.return_value = disp_dev
@@ -242,7 +244,7 @@ class TestUploadImage:
         data = self._make_data()
         upload_image(data, slot=1)
 
-        pkt = mock_send_cmd.call_args[0][1]
+        pkt = cast("list[int]", mock_send_cmd.call_args[0][1])
         assert pkt[0] == REPORT_ID
         assert pkt[1] == CMD_IMAGE
         assert pkt[2] == 1  # slot
@@ -260,8 +262,8 @@ class TestUploadImage:
         mock_open_dev: MagicMock,
         mock_open_disp: MagicMock,
     ) -> None:
-        cmd_dev = MagicMock()
-        disp_dev = MagicMock()
+        cmd_dev = HidDeviceMock()
+        disp_dev = HidDeviceMock()
         disp_dev.read.return_value = None
         mock_open_dev.return_value = cmd_dev
         mock_open_disp.return_value = disp_dev
@@ -286,8 +288,8 @@ class TestUploadImage:
         mock_open_dev: MagicMock,
         mock_open_disp: MagicMock,
     ) -> None:
-        cmd_dev = MagicMock()
-        disp_dev = MagicMock()
+        cmd_dev = HidDeviceMock()
+        disp_dev = HidDeviceMock()
         disp_dev.read.return_value = None
         mock_open_dev.return_value = cmd_dev
         mock_open_disp.return_value = disp_dev
@@ -296,7 +298,7 @@ class TestUploadImage:
         upload_image(data)
 
         # Each write should be report_id(0x00) + 4096 bytes
-        first_write = disp_dev.write.call_args_list[0][0][0]
+        first_write = cast("bytes", disp_dev.write.call_args_list[0][0][0])
         assert len(first_write) == DISPLAY_CHUNK_SIZE + 1
         assert first_write[0] == 0x00
 
@@ -313,8 +315,8 @@ class TestUploadImage:
         mock_open_dev: MagicMock,
         mock_open_disp: MagicMock,
     ) -> None:
-        cmd_dev = MagicMock()
-        disp_dev = MagicMock()
+        cmd_dev = HidDeviceMock()
+        disp_dev = HidDeviceMock()
         disp_dev.read.return_value = None
         mock_open_dev.return_value = cmd_dev
         mock_open_disp.return_value = disp_dev
@@ -341,8 +343,8 @@ class TestUploadImage:
         mock_open_dev: MagicMock,
         mock_open_disp: MagicMock,
     ) -> None:
-        cmd_dev = MagicMock()
-        disp_dev = MagicMock()
+        cmd_dev = HidDeviceMock()
+        disp_dev = HidDeviceMock()
         disp_dev.read.return_value = None
         mock_open_dev.return_value = cmd_dev
         mock_open_disp.return_value = disp_dev
@@ -353,8 +355,8 @@ class TestUploadImage:
         disp_dev.close.assert_called_once()
 
     def test_uses_provided_devices(self) -> None:
-        cmd_dev = MagicMock()
-        disp_dev = MagicMock()
+        cmd_dev = HidDeviceMock()
+        disp_dev = HidDeviceMock()
         disp_dev.read.return_value = None
 
         with (
@@ -362,7 +364,11 @@ class TestUploadImage:
             patch("ak820ctl.display.send_command"),
             patch("ak820ctl.display.session_save"),
         ):
-            upload_image(self._make_data(), cmd_device=cmd_dev, disp_device=disp_dev)
+            upload_image(
+                self._make_data(),
+                cmd_device=as_hid_device(cmd_dev),
+                disp_device=as_hid_device(disp_dev),
+            )
 
         # Should NOT close devices we didn't open
         cmd_dev.close.assert_not_called()

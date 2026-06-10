@@ -1,5 +1,18 @@
 # Ajazz AK820 Reverse Engineering Research
 
+> For the canonical state of findings see [`STATUS.md`](STATUS.md). This
+> document is the landscape / research-context overview.
+
+## Findings summary (June 2026)
+
+| Question | Answer |
+|----------|--------|
+| Where does the keymap write happen? | `cmd_0x11` (default layer, flash `0x9400`) and `cmd_0x27` (alternate layers, flash `0xAC00`). See [`windows-driver-analysis.md`](windows-driver-analysis.md). |
+| Is `cmd_0x14` the keymap write? | **No** — it's a 48-chunk *read*. The Windows tool never sends it. |
+| Do "stub" CMDs (`0x10/0x11/0x14/0x15/0x16/0x26`) actually work? | Yes, they're real reads of default-zero RAM buffers. The "stub" interpretation in the prior session was a misread; see [`firmware-analysis-helpers.md`](firmware-analysis-helpers.md). |
+| Does V1.13 differ from RS2 V1.28? | Yes, but only `cmd_0x11` (V1.13: writes flash `0x9400`; V1.28: no-op) and `cmd_0x19` (V1.13: BT-flag set; V1.28: absent). All 8 family blobs share the same command set otherwise. |
+| Are LCD chunks 4096 or 4123 bytes? | **4123** on the wire (4096 payload + 27 B trailer). |
+
 ## Hardware Overview
 
 | Property | Value |
@@ -15,7 +28,8 @@
 | Flash | PY25Q128HA, 16MB, SPI |
 | Bluetooth Module | WCH CH582F |
 | Key Matrix | 6 rows x 15 columns |
-| Stock FW Version | V1.13 |
+| Stock FW Version analyzed | V1.13 (+ 7 family-member blobs, see ak820-re/firmware-blobs/) |
+| Live test device | bcdDevice 1.14 (one minor revision ahead of analyzed V1.13) |
 
 ## Bootloader Access
 

@@ -125,6 +125,15 @@ JSON is no longer user-overridable at runtime.
   `commands.py`).
 - `docs/RESEARCH.md` — chipset, related-project list, official software pointers.
 - `docs/FIRMWARE-HACKING.md` — bootloader/MCU notes (out of CLI scope but useful background).
+- `docs/STATUS.md` — canonical Phase 1–4 reverse-engineering state. Read this when scoping
+  any new feature; it lists what's known, what's debunked, and what's still open.
+- `docs/unknown-commands.md` — per-CMD analysis for the firmware bytes the vendor tool
+  never sends. Consult before probing any CMD not already covered by ak820ctl.
+- `docs/firmware-analysis-helpers.md` — V1.13 helper-function semantics (flash I/O, buffer
+  management, the two-dispatch architecture).
+- `docs/windows-driver-analysis.md` — static analysis of vendor `DeviceDriver.exe`; lists
+  the exact CMD sequences the Windows tool sends, including the keymap upload path
+  (CMDs `0x11` / `0x27`).
 
 ## Bundled themes
 
@@ -188,6 +197,13 @@ here — flag them when relevant, don't silently implement during unrelated work
 - **GUI front-end.** Out of scope; CLI-only by design.
 - **QMK port / custom firmware.** See `docs/FIRMWARE-HACKING.md`; nothing for this repo to do
   until SN32F299 lands in SonixQMK.
+- **Keymap upload / read.** CMDs `0x11` (default layer, flash `0x9400`, V1.13-only),
+  `0x27` (alternate layer, flash `0xAC00`), and `0x15` (read 49 chunks) are now reverse-
+  engineered — see `docs/STATUS.md` and `docs/windows-driver-analysis.md`. Not yet exposed
+  by ak820ctl. Per-key 4-byte encoding is `[type_tag, usage_low, usage_high, modifier]`.
+- **VIA-mode dual identity.** AK820 Pro also ships VID `0x3151` / PID `0x4021` running
+  standard `id_dynamic_keymap_*` over report ID `0x04`. Mode-switch mechanism still unknown
+  — see `docs/PROTOCOL.md` §VIA-mode variant.
 
 ## Conventions
 
@@ -199,6 +215,11 @@ here — flag them when relevant, don't silently implement during unrelated work
 - All CI checks must pass before merge (see .github/workflows/ci.yml)
 - Never squash merge PRs — use merge commits to preserve commit history
 - Never use `git add -A` or `git add .` — always stage individual files by name
+- **Always check Copilot review comments before declaring a PR done.** Run
+  `gh api repos/IvanAnishchuk/ak820ctl/pulls/<N>/comments` (inline review
+  comments) and `gh pr view <N> --json reviews` (top-level reviews) and
+  address each finding — fix or explicitly justify dismissing it — before
+  asking the user to merge. Don't rely on green CI alone.
 - **Always update `CHANGELOG.md` when you change behavior.** Any commit
   touching `src/` or `scripts/` (CLI surface, protocol, build/install
   flows) gets an entry under `## [Unreleased]` in the appropriate

@@ -15,7 +15,9 @@
 #   uv run ninja -C builddir ruff-security.txt      # Lint: S+BLE rules only
 #   uv run ninja -C builddir ruff-format.log        # Lint: format check
 #   uv run ninja -C builddir ty-check.txt           # Type check: ty
-#   uv run ninja -C builddir mypy-strict.txt        # Type check: mypy strict
+#   uv run ninja -C builddir mypy-strict.txt        # Type check: mypy strict (+ any-exprs, lineprecision, linecount, linecoverage, html, txt, xml, cobertura, junit, jsonl)
+#   uv run ninja -C builddir mypy-paranoid.txt      # Type check: mypy strict + every --disallow-any-* flag (allowed to fail)
+#   uv run ninja -C builddir diff-cover-mypy.json   # PR type-precision gating from mypy-strict-cobertura/cobertura.xml
 #   uv run ninja -C builddir pyright-recommended.txt # Type check: basedpyright
 #   uv run ninja -C builddir requirements           # Lock export + SBOM
 #
@@ -184,14 +186,35 @@ test(
 )
 
 # ── Type check: mypy ──────────────────────────────────────────────────────
+# Generates the main pass/fail log plus every mypy coverage-style report:
+#   mypy-strict.txt              — stdout (errors/notes/summary)
+#   mypy-strict.jsonl            — -O json line-delimited results
+#   mypy-strict.junit.xml        — JUnit XML
+#   mypy-strict-html/            — browsable HTML coverage
+#   mypy-strict-txt/             — text coverage
+#   mypy-strict-xml/             — raw XML coverage
+#   mypy-strict-cobertura/       — Cobertura XML (CI coverage tools, diff-cover)
+#   mypy-strict-linecoverage/    — line-level type-coverage JSON
+#   mypy-strict-lineprecision/   — per-line precision (any/imprecise/empty/precise)
+#   mypy-strict-linecount/       — annotated vs total line counts
+#   mypy-strict-any-exprs/       — count of `Any` expressions per file
 
 custom_target(
   'mypy-strict',
-  output: ['mypy-strict.txt'],
+  output: [
+    'mypy-strict.txt', 'mypy-strict.jsonl', 'mypy-strict.junit.xml',
+    'mypy-strict-html', 'mypy-strict-txt', 'mypy-strict-xml',
+    'mypy-strict-cobertura', 'mypy-strict-linecoverage',
+    'mypy-strict-lineprecision', 'mypy-strict-linecount', 'mypy-strict-any-exprs',
+  ],
   command: [
     bash, '-c',
     '''cd @0@
-uv run mypy src/ 2>&1 | tee @1@/mypy-strict.txt
+d="@1@"
+rm -rf "$d"/mypy-strict*
+uv run mypy src/ --junit-xml "$d/mypy-strict.junit.xml" --html-report "$d/mypy-strict-html" --txt-report "$d/mypy-strict-txt" --xml-report "$d/mypy-strict-xml" --cobertura-xml-report "$d/mypy-strict-cobertura" --linecoverage-report "$d/mypy-strict-linecoverage" --lineprecision-report "$d/mypy-strict-lineprecision" --linecount-report "$d/mypy-strict-linecount" --any-exprs-report "$d/mypy-strict-any-exprs" > "$d/mypy-strict.txt"; echo "  mypy strict: exit $?"; ls -l "$d/mypy-strict.txt"
+uv run mypy src/ -O json > "$d/mypy-strict.jsonl"; echo "  mypy strict json: exit $?"; ls -l "$d/mypy-strict.jsonl"
+cat "$d/mypy-strict.txt"
 '''.format(src_root, build_root),
   ],
   build_always_stale: true,
@@ -204,6 +227,63 @@ test(
   suite: ['typecheck', 'fast'],
   timeout: 60,
   workdir: src_root,
+)
+
+# ── Type check: mypy paranoid ─────────────────────────────────────────────
+# Same 11-output shape as mypy-strict but with every --disallow-any-*
+# flag enabled. Allowed to fail (build_by_default: false); the point is
+# to surface framework-imposed `Any` (typer.Option/Argument, pydantic
+# Field) separately from real type debt so a reader can tell at a glance
+# which sites are ours vs. third-party API surface.
+
+mypy_paranoid_flags = '--strict --warn-unreachable --warn-incomplete-stub --disallow-any-explicit --disallow-any-decorated --disallow-any-unimported --strict-equality-for-none --strict-bytes'
+
+custom_target(
+  'mypy-paranoid',
+  output: [
+    'mypy-paranoid.txt', 'mypy-paranoid.jsonl', 'mypy-paranoid.junit.xml',
+    'mypy-paranoid-html', 'mypy-paranoid-txt', 'mypy-paranoid-xml',
+    'mypy-paranoid-cobertura', 'mypy-paranoid-linecoverage',
+    'mypy-paranoid-lineprecision', 'mypy-paranoid-linecount', 'mypy-paranoid-any-exprs',
+  ],
+  command: [
+    bash, '-c',
+    '''cd @0@
+d="@1@"
+flags="@2@"
+rm -rf "$d"/mypy-paranoid*
+uv run mypy $flags src/ --junit-xml "$d/mypy-paranoid.junit.xml" --html-report "$d/mypy-paranoid-html" --txt-report "$d/mypy-paranoid-txt" --xml-report "$d/mypy-paranoid-xml" --cobertura-xml-report "$d/mypy-paranoid-cobertura" --linecoverage-report "$d/mypy-paranoid-linecoverage" --lineprecision-report "$d/mypy-paranoid-lineprecision" --linecount-report "$d/mypy-paranoid-linecount" --any-exprs-report "$d/mypy-paranoid-any-exprs" > "$d/mypy-paranoid.txt"; echo "  mypy paranoid: exit $?"; ls -l "$d/mypy-paranoid.txt"
+uv run mypy $flags src/ -O json > "$d/mypy-paranoid.jsonl"; echo "  mypy paranoid json: exit $?"; ls -l "$d/mypy-paranoid.jsonl"
+cat "$d/mypy-paranoid.txt"
+'''.format(src_root, build_root, mypy_paranoid_flags),
+  ],
+  build_always_stale: true,
+  console: true,
+  build_by_default: false,
+)
+
+# ── Diff coverage: mypy ───────────────────────────────────────────────────
+# Uses the mypy-strict cobertura report to gate per-PR type precision the
+# same way line coverage is gated. Override the base branch with the
+# DIFF_BASE env var (defaults to whatever diff-cover picks itself, which
+# is usually `origin/main`).
+#
+#   DIFF_BASE=origin/main uv run ninja -C builddir diff-cover-mypy.json
+
+custom_target(
+  'diff-cover-mypy',
+  output: ['diff-cover-mypy.json', 'diff-cover-mypy.md'],
+  command: [
+    bash, '-c',
+    '''cd @0@
+cov="@1@/mypy-strict-cobertura/cobertura.xml"
+base="${DIFF_BASE:-}"
+if [ ! -f "$cov" ]; then echo "No mypy cobertura at $cov — run mypy-strict first."; exit 1; fi
+uv run diff-cover "$cov" ${base:+--compare-branch="$base"} --format markdown:@1@/diff-cover-mypy.md,json:@1@/diff-cover-mypy.json
+'''.format(src_root, build_root),
+  ],
+  console: true,
+  build_by_default: false,
 )
 
 # ── Type check: basedpyright ──────────────────────────────────────────────

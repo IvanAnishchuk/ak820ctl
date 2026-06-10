@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 — used at runtime (tmp_path fixture)
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from ak820ctl.commands import dump_settings, restore_settings
 from ak820ctl.models import DeviceInfo, KeyboardDump, LightingConfig
+from tests.conftest import HidDeviceMock, as_hid_device
 
 
-def _mock_device() -> MagicMock:
+def _mock_device() -> HidDeviceMock:
     """Create a mock device that returns valid ID and lighting responses."""
-    dev = MagicMock()
+    dev = HidDeviceMock()
     id_ack = [0x00, 0x04, 0x05] + [0x00] * 62
     id_data = [0x00] * 65
     id_data[1] = 0x40
@@ -40,8 +41,7 @@ def _mock_device() -> MagicMock:
 
 def test_dump_settings() -> None:
     dev = _mock_device()
-    with patch("ak820ctl.commands.open_device", return_value=dev):
-        data = dump_settings(device=dev)
+    data = dump_settings(device=as_hid_device(dev))
 
     assert isinstance(data, KeyboardDump)
     assert data.device.firmware == "1.20"
@@ -81,7 +81,7 @@ def test_save_produces_valid_json(tmp_path: Path) -> None:
 
 
 def test_restore_applies_lighting() -> None:
-    dev = MagicMock()
+    dev = HidDeviceMock()
     dev.get_feature_report.return_value = [0x00] * 65
 
     dump = KeyboardDump(
@@ -97,45 +97,42 @@ def test_restore_applies_lighting() -> None:
         ),
     )
 
-    with patch("ak820ctl.commands.open_device", return_value=dev):
-        actions = restore_settings(dump, device=dev, skip_time=True)
+    actions = restore_settings(dump, device=as_hid_device(dev), skip_time=True)
 
     assert "lighting: breath" in actions
     assert dev.send_feature_report.call_count >= 3
 
 
 def test_restore_syncs_time() -> None:
-    dev = MagicMock()
+    dev = HidDeviceMock()
     dev.get_feature_report.return_value = [0x00] * 65
 
     dump = KeyboardDump(lighting=LightingConfig(mode="static"))
 
-    with patch("ak820ctl.commands.open_device", return_value=dev):
-        actions = restore_settings(dump, device=dev, skip_time=False)
+    actions = restore_settings(dump, device=as_hid_device(dev), skip_time=False)
 
     assert "time: synced" in actions
 
 
 def test_restore_skip_time() -> None:
-    dev = MagicMock()
+    dev = HidDeviceMock()
     dev.get_feature_report.return_value = [0x00] * 65
 
     dump = KeyboardDump(lighting=LightingConfig(mode="off"))
 
-    with patch("ak820ctl.commands.open_device", return_value=dev):
-        actions = restore_settings(dump, device=dev, skip_time=True)
+    actions = restore_settings(dump, device=as_hid_device(dev), skip_time=True)
 
     assert "time: synced" not in actions
 
 
 def test_restore_closes_device_when_created() -> None:
-    dev = MagicMock()
+    dev = HidDeviceMock()
     dev.get_feature_report.return_value = [0x00] * 65
 
     dump = KeyboardDump()
 
-    with patch("ak820ctl.commands.open_device", return_value=dev):
-        restore_settings(dump, skip_time=True)
+    with patch("ak820ctl.commands.open_device", return_value=as_hid_device(dev)):
+        _ = restore_settings(dump, skip_time=True)
 
     dev.close.assert_called_once()
 
