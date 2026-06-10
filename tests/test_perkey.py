@@ -275,11 +275,15 @@ class TestReadPerkeyStored:
 # ── Property-based tests (hypothesis) ────────────────────────────────────────
 
 
-_KEY_COLORS_LIST = st.lists(
-    st.tuples(st.integers(0, 255), st.integers(0, 255), st.integers(0, 255)),
-    min_size=NUM_KEYS,
-    max_size=NUM_KEYS,
-)
+def _bytes_to_triples(buf: bytes) -> list[tuple[int, int, int]]:
+    return [(buf[i * 3], buf[i * 3 + 1], buf[i * 3 + 2]) for i in range(NUM_KEYS)]
+
+
+# Draw NUM_KEYS RGB triples by sampling one 432-byte blob and slicing it.
+# Drawing 432 individual `st.integers(0, 255)` was triggering hypothesis'
+# HealthCheck.too_slow (~290 ms per example); one binary draw is ~100x
+# faster and the distribution over `(r, g, b)` is still uniform.
+_KEY_COLORS_LIST = st.binary(min_size=NUM_KEYS * 3, max_size=NUM_KEYS * 3).map(_bytes_to_triples)
 
 
 @given(rgb_triples=_KEY_COLORS_LIST)
