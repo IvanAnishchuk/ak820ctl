@@ -31,7 +31,9 @@ CMD_SET_LIGHTING = 0x13  # Also writes flash @ 0x9800 (persists power-cycle)
 CMD_SET_SLEEP = 0x17
 CMD_SET_TIME = 0x28
 
-# Reverse-engineered but not yet exposed by ak820ctl (see plan2.md Tier B+).
+# Reverse-engineered. CMD_READ_KEYMAP is wired through ak820ctl.keymap
+# (used by `keymap --dump`); the rest are parked for the keymap-write
+# path (plan2.md Tier E).
 CMD_KEYMAP_DEFAULT = 0x11  # V1.13 only — writes flash @ 0x9400
 CMD_READ_KEYMAP = 0x15  # 49 chunks x 64 B = 3,136 B
 CMD_CUSTOM_LIGHTING_PREAMBLE = 0x20  # Sets firmware state byte 0x32
