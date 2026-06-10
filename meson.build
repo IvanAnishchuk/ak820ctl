@@ -15,7 +15,7 @@
 #   uv run ninja -C builddir ruff-security.txt      # Lint: S+BLE rules only
 #   uv run ninja -C builddir ruff-format.log        # Lint: format check
 #   uv run ninja -C builddir ty-check.txt           # Type check: ty
-#   uv run ninja -C builddir mypy-strict.txt        # Type check: mypy strict
+#   uv run ninja -C builddir mypy-strict.txt        # Type check: mypy strict (+ any-exprs, lineprecision, linecount, linecoverage, html, txt, xml, cobertura, junit, jsonl)
 #   uv run ninja -C builddir pyright-recommended.txt # Type check: basedpyright
 #   uv run ninja -C builddir requirements           # Lock export + SBOM
 #
@@ -184,14 +184,35 @@ test(
 )
 
 # ── Type check: mypy ──────────────────────────────────────────────────────
+# Generates the main pass/fail log plus every mypy coverage-style report:
+#   mypy-strict.txt              — stdout (errors/notes/summary)
+#   mypy-strict.jsonl            — -O json line-delimited results
+#   mypy-strict.junit.xml        — JUnit XML
+#   mypy-strict-html/            — browsable HTML coverage
+#   mypy-strict-txt/             — text coverage
+#   mypy-strict-xml/             — raw XML coverage
+#   mypy-strict-cobertura/       — Cobertura XML (CI coverage tools, diff-cover)
+#   mypy-strict-linecoverage/    — line-level type-coverage JSON
+#   mypy-strict-lineprecision/   — per-line precision (any/imprecise/empty/precise)
+#   mypy-strict-linecount/       — annotated vs total line counts
+#   mypy-strict-any-exprs/       — count of `Any` expressions per file
 
 custom_target(
   'mypy-strict',
-  output: ['mypy-strict.txt'],
+  output: [
+    'mypy-strict.txt', 'mypy-strict.jsonl', 'mypy-strict.junit.xml',
+    'mypy-strict-html', 'mypy-strict-txt', 'mypy-strict-xml',
+    'mypy-strict-cobertura', 'mypy-strict-linecoverage',
+    'mypy-strict-lineprecision', 'mypy-strict-linecount', 'mypy-strict-any-exprs',
+  ],
   command: [
     bash, '-c',
     '''cd @0@
-uv run mypy src/ 2>&1 | tee @1@/mypy-strict.txt
+d="@1@"
+rm -rf "$d"/mypy-strict*
+uv run mypy src/ --junit-xml "$d/mypy-strict.junit.xml" --html-report "$d/mypy-strict-html" --txt-report "$d/mypy-strict-txt" --xml-report "$d/mypy-strict-xml" --cobertura-xml-report "$d/mypy-strict-cobertura" --linecoverage-report "$d/mypy-strict-linecoverage" --lineprecision-report "$d/mypy-strict-lineprecision" --linecount-report "$d/mypy-strict-linecount" --any-exprs-report "$d/mypy-strict-any-exprs" > "$d/mypy-strict.txt"; echo "  mypy strict: exit $?"; ls -l "$d/mypy-strict.txt"
+uv run mypy src/ -O json > "$d/mypy-strict.jsonl"; echo "  mypy strict json: exit $?"; ls -l "$d/mypy-strict.jsonl"
+cat "$d/mypy-strict.txt"
 '''.format(src_root, build_root),
   ],
   build_always_stale: true,

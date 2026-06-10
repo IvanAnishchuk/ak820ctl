@@ -68,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- meson `mypy-strict` ninja target now emits every mypy report format
+  (any-exprs, lineprecision, linecount, linecoverage, html, txt, xml,
+  cobertura, junit, jsonl) alongside the pass/fail log. `lxml` and
+  `lxml-stubs` added as dev dependencies to enable
+  `--cobertura-xml-report`.
 - `data/keymap.json`: digit names `"1".."0"` renamed to `digit_1..digit_0`
   so they're valid Python identifiers for the `Key` enum
 - `data/keymap.json`: previously-`null` slots renamed to stable
