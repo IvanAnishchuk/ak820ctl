@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `stubs/typer/__init__.pyi` — vendored type stubs for the typer surface
+  used by `ak820ctl.cli` (`Typer`, `Option`, `Argument`, `Exit`,
+  `command`/`callback` decorators). Drops mypy explicit-Any in `cli.py`
+  from 267 → 234 and `__main__.py` from 1 → 0.
 - meson `diff-cover-mypy` ninja target: per-PR mypy type-precision
   gating against `${DIFF_BASE:-origin/main}` using the
   `mypy-strict-cobertura/cobertura.xml` cobertura report. Mirrors the
