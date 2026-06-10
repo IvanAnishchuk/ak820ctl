@@ -68,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `types-Pillow` added as a dev dependency; the
+  `# pyright: ignore[reportUnknownMemberType]` and explanatory comment
+  on `display.frame_to_rgb565` are removed (Pillow's stubs cover
+  `Image.resize` now). Drops `display.py` mypy explicit-Any from
+  33 → 26 and unimported-Any from 1 → 0.
 - Explicit `dict[int, str]` annotations on `commands.LIGHT_MODE_NAMES`
   and `commands.DIRECTION_NAMES` to lock in the reverse-mapping types
   (mypy already inferred them correctly; the annotation guards against

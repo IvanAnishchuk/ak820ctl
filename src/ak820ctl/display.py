@@ -48,14 +48,7 @@ def rgb565_pixel(r: int, g: int, b: int) -> int:
 
 def frame_to_rgb565(img: Image.Image) -> bytes:
     """Resize a PIL Image to display dimensions and convert to RGB565-LE bytes."""
-    # PIL's Image.resize() overload signature has `Unknown` in the `size`
-    # parameter type, which surfaces as `reportUnknownMemberType` no matter
-    # what we pass. cast on the result doesn't help — the warning is about
-    # the method itself, not its return type. Suppressing locally with a
-    # clear note rather than vendoring our own PIL stub.
-    resized: Image.Image = img.resize(  # pyright: ignore[reportUnknownMemberType]
-        (DISPLAY_WIDTH, DISPLAY_HEIGHT), Image.Resampling.NEAREST
-    )
+    resized: Image.Image = img.resize((DISPLAY_WIDTH, DISPLAY_HEIGHT), Image.Resampling.NEAREST)
     rgb_img = resized.convert("RGB")
     pixels = rgb_img.tobytes()
 
