@@ -199,3 +199,11 @@ here — flag them when relevant, don't silently implement during unrelated work
 - All CI checks must pass before merge (see .github/workflows/ci.yml)
 - Never squash merge PRs — use merge commits to preserve commit history
 - Never use `git add -A` or `git add .` — always stage individual files by name
+- **Always update `CHANGELOG.md` when you change behavior.** Any commit
+  touching `src/` or `scripts/` (CLI surface, protocol, build/install
+  flows) gets an entry under `## [Unreleased]` in the appropriate
+  `Added`/`Changed`/`Fixed`/`Removed` section *in the same PR* — not in a
+  follow-up. Skip only for pure refactors, test-only changes, and
+  dependency bumps. A project-level Stop hook
+  (`.claude/hooks/check-changelog.sh`) checks this before letting you
+  declare done; if it blocks you, write the entry.
