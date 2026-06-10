@@ -526,3 +526,152 @@ def test_dump_runtime_error_exits_1(mock_dump: MagicMock) -> None:
     result = runner.invoke(app, ["dump"])
     assert result.exit_code == 1
     assert "no device" in result.output
+
+
+# ---------------------------- image ----------------------------
+
+
+@patch("ak820ctl.cli.upload_image")
+@patch("ak820ctl.cli.load_image")
+def test_image_succeeds(mock_load: MagicMock, mock_upload: MagicMock, tmp_path: Path) -> None:
+    """`image FILE` calls load_image, then upload_image with the bytes and slot."""
+    f = tmp_path / "smile.png"
+    _ = f.write_bytes(b"fake png bytes")
+    mock_load.return_value = b"\x00" * 1024  # any non-empty bytes
+    result = runner.invoke(app, ["image", str(f), "--slot", "2"])
+    assert result.exit_code == 0, result.output
+    assert "Image uploaded to slot 2" in result.output
+    mock_load.assert_called_once_with(f)
+    assert mock_upload.call_args.kwargs["slot"] == 2
+
+
+def test_image_slot_out_of_range(tmp_path: Path) -> None:
+    f = tmp_path / "img.png"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["image", str(f), "--slot", "0"])
+    assert result.exit_code == 1
+    assert "Slot must be 1-255" in result.output
+
+
+@patch("ak820ctl.cli.load_image", side_effect=OSError("bad file"))
+def test_image_oserror_on_load(mock_load: MagicMock, tmp_path: Path) -> None:
+    del mock_load
+    f = tmp_path / "img.png"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["image", str(f)])
+    assert result.exit_code == 1
+    assert "Cannot load image" in result.output
+
+
+@patch("ak820ctl.cli.upload_image", side_effect=RuntimeError("no device"))
+@patch("ak820ctl.cli.load_image")
+def test_image_runtime_error_exits_1(
+    mock_load: MagicMock, mock_upload: MagicMock, tmp_path: Path
+) -> None:
+    del mock_upload
+    mock_load.return_value = b"\x00" * 1024
+    f = tmp_path / "img.png"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["image", str(f)])
+    assert result.exit_code == 1
+    assert "no device" in result.output
+
+
+# ---------------------------- gif ----------------------------
+
+
+@patch("ak820ctl.cli.upload_image")
+@patch("ak820ctl.cli.load_animation")
+def test_gif_succeeds(mock_load: MagicMock, mock_upload: MagicMock, tmp_path: Path) -> None:
+    """`gif FILE` calls load_animation, then upload_image; prints frame count."""
+    f = tmp_path / "anim.gif"
+    _ = f.write_bytes(b"fake gif")
+    # data[0] is frame count; load_animation returns header + frames
+    mock_load.return_value = bytes([7]) + b"\x00" * 4096
+    result = runner.invoke(app, ["gif", str(f), "--slot", "3"])
+    assert result.exit_code == 0, result.output
+    assert "Loaded 7 frame" in result.output
+    assert "uploaded to slot 3" in result.output
+    assert mock_upload.call_args.kwargs["slot"] == 3
+
+
+def test_gif_slot_out_of_range(tmp_path: Path) -> None:
+    f = tmp_path / "anim.gif"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["gif", str(f), "--slot", "300"])
+    assert result.exit_code == 1
+    assert "Slot must be 1-255" in result.output
+
+
+def test_gif_max_frames_zero_rejected(tmp_path: Path) -> None:
+    f = tmp_path / "anim.gif"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["gif", str(f), "--max-frames", "0"])
+    assert result.exit_code == 1
+    assert "max-frames must be >= 1" in result.output
+
+
+@patch("ak820ctl.cli.load_animation", side_effect=OSError("bad gif"))
+def test_gif_oserror_on_load(mock_load: MagicMock, tmp_path: Path) -> None:
+    del mock_load
+    f = tmp_path / "anim.gif"
+    _ = f.write_bytes(b"x")
+    result = runner.invoke(app, ["gif", str(f)])
+    assert result.exit_code == 1
+    assert "Cannot load animation" in result.output
+
+
+# ---------------------------- restore ----------------------------
+
+
+@patch("ak820ctl.cli.restore_settings")
+def test_restore_succeeds(mock_restore: MagicMock, tmp_path: Path) -> None:
+    """`restore FILE` reads JSON, calls restore_settings, prints actions."""
+    dump = KeyboardDump(
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        lighting=LightingConfig(mode="breath"),
+    )
+    f = tmp_path / "backup.json"
+    dump.save(f)
+    mock_restore.return_value = ["time: synced", "lighting: breath"]
+    result = runner.invoke(app, ["restore", str(f)])
+    assert result.exit_code == 0
+    assert "time: synced" in result.output
+    assert "lighting: breath" in result.output
+    assert mock_restore.call_args.kwargs["skip_time"] is False
+
+
+@patch("ak820ctl.cli.restore_settings")
+def test_restore_skip_time_passes_through(mock_restore: MagicMock, tmp_path: Path) -> None:
+    dump = KeyboardDump(lighting=LightingConfig(mode="off"))
+    f = tmp_path / "backup.json"
+    dump.save(f)
+    mock_restore.return_value = ["lighting: off"]
+    result = runner.invoke(app, ["restore", str(f), "--skip-time"])
+    assert result.exit_code == 0
+    assert mock_restore.call_args.kwargs["skip_time"] is True
+
+
+def test_restore_missing_file_exits_1() -> None:
+    result = runner.invoke(app, ["restore", "/nonexistent/backup.json"])
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
+
+
+def test_restore_invalid_json_exits_1(tmp_path: Path) -> None:
+    f = tmp_path / "bad.json"
+    _ = f.write_text("not json", encoding="utf-8")
+    result = runner.invoke(app, ["restore", str(f)])
+    assert result.exit_code == 1
+    assert "Cannot read dump file" in result.output
+
+
+@patch("ak820ctl.cli.restore_settings", side_effect=RuntimeError("no device"))
+def test_restore_runtime_error_exits_1(mock_restore: MagicMock, tmp_path: Path) -> None:
+    del mock_restore
+    dump = KeyboardDump(lighting=LightingConfig(mode="off"))
+    f = tmp_path / "backup.json"
+    dump.save(f)
+    result = runner.invoke(app, ["restore", str(f)])
+    assert result.exit_code == 1
+    assert "no device" in result.output
