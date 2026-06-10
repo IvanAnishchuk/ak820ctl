@@ -80,6 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Renamed CLI helpers `_parse_hex_color`, `_parse_key_spec`,
   `_compile_theme`, `_load_layout` to drop the leading underscore; they're
   stateless utilities tested from outside the module
+- Renamed `display._rgb565_pixel` to `display.rgb565_pixel` for the same
+  reason (stateless RGB565 pixel encoder, tested externally)
 - `perkey --key INDEX:RRGGBB` validates all specs before reading device
   state, so a malformed spec fails fast without making a device round-trip
 - meson `requirements` ninja target uses `--output-file <relative>` so

@@ -41,21 +41,28 @@ MAX_SLOT = 255
 CMD_IMAGE = 0x72
 
 
-def _rgb565_pixel(r: int, g: int, b: int) -> int:
+def rgb565_pixel(r: int, g: int, b: int) -> int:
     """Convert a single RGB888 pixel to RGB565."""
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
 def frame_to_rgb565(img: Image.Image) -> bytes:
     """Resize a PIL Image to display dimensions and convert to RGB565-LE bytes."""
-    resized: Image.Image = img.resize((DISPLAY_WIDTH, DISPLAY_HEIGHT), Image.Resampling.NEAREST)
+    # PIL's Image.resize() overload signature has `Unknown` in the `size`
+    # parameter type, which surfaces as `reportUnknownMemberType` no matter
+    # what we pass. cast on the result doesn't help — the warning is about
+    # the method itself, not its return type. Suppressing locally with a
+    # clear note rather than vendoring our own PIL stub.
+    resized: Image.Image = img.resize(  # pyright: ignore[reportUnknownMemberType]
+        (DISPLAY_WIDTH, DISPLAY_HEIGHT), Image.Resampling.NEAREST
+    )
     rgb_img = resized.convert("RGB")
     pixels = rgb_img.tobytes()
 
     buf = bytearray(FRAME_BYTES)
     for i in range(DISPLAY_WIDTH * DISPLAY_HEIGHT):
         offset = i * 3
-        val = _rgb565_pixel(pixels[offset], pixels[offset + 1], pixels[offset + 2])
+        val = rgb565_pixel(pixels[offset], pixels[offset + 1], pixels[offset + 2])
         buf[i * 2] = val & 0xFF
         buf[i * 2 + 1] = val >> 8
     return bytes(buf)

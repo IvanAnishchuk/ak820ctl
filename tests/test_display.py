@@ -18,11 +18,11 @@ from ak820ctl.display import (
     FRAME_BYTES,
     HEADER_SIZE,
     MAX_FRAMES,
-    _rgb565_pixel,
     build_header,
     frame_to_rgb565,
     load_animation,
     load_image,
+    rgb565_pixel,
     upload_image,
 )
 from ak820ctl.hid import DISPLAY_CHUNK_SIZE, REPORT_ID
@@ -33,19 +33,19 @@ from tests.conftest import HidDeviceMock, as_hid_device
 
 class TestRgb565Pixel:
     def test_red(self) -> None:
-        assert _rgb565_pixel(255, 0, 0) == 0xF800
+        assert rgb565_pixel(255, 0, 0) == 0xF800
 
     def test_green(self) -> None:
-        assert _rgb565_pixel(0, 255, 0) == 0x07E0
+        assert rgb565_pixel(0, 255, 0) == 0x07E0
 
     def test_blue(self) -> None:
-        assert _rgb565_pixel(0, 0, 255) == 0x001F
+        assert rgb565_pixel(0, 0, 255) == 0x001F
 
     def test_white(self) -> None:
-        assert _rgb565_pixel(255, 255, 255) == 0xFFFF
+        assert rgb565_pixel(255, 255, 255) == 0xFFFF
 
     def test_black(self) -> None:
-        assert _rgb565_pixel(0, 0, 0) == 0x0000
+        assert rgb565_pixel(0, 0, 0) == 0x0000
 
 
 class TestFrameToRgb565:
