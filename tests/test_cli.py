@@ -383,16 +383,21 @@ def test_time_set_with_full_datetime(mock_sync: MagicMock) -> None:
 
 
 @patch("ak820ctl.cli.sync_time")
-def test_time_set_with_time_only_uses_today(mock_sync: MagicMock) -> None:
-    """`time --set HH:MM:SS` parses with today's date filled in."""
-    now = datetime.now()
-    mock_sync.return_value = now
+@patch("ak820ctl.cli.datetime")
+def test_time_set_with_time_only_uses_today(mock_dt: MagicMock, mock_sync: MagicMock) -> None:
+    """`time --set HH:MM:SS` parses with today's date filled in.
+
+    `datetime.now()` is patched to a fixed value so the test can't flake
+    across a midnight rollover between the test capture and the CLI call.
+    """
+    fixed = datetime(2025, 6, 11, 12, 0, 0)
+    mock_dt.now.return_value = fixed
+    mock_dt.strptime.side_effect = datetime.strptime
+    mock_sync.return_value = fixed
     result = runner.invoke(app, ["time", "--set", "14:30:45"])
     assert result.exit_code == 0
     dt_arg = cast("datetime", mock_sync.call_args.kwargs["dt"])
-    assert dt_arg.year == now.year
-    assert dt_arg.month == now.month
-    assert dt_arg.day == now.day
+    assert (dt_arg.year, dt_arg.month, dt_arg.day) == (2025, 6, 11)
     assert (dt_arg.hour, dt_arg.minute, dt_arg.second) == (14, 30, 45)
 
 

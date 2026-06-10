@@ -7,16 +7,19 @@ attribute access was `Any`. `HidDeviceMock` assigns each child mock as a
 real attribute in `__init__`, so pyright recovers `MagicMock` (not `Any`)
 for `mock.send_feature_report.call_args` and friends.
 
-We deliberately do NOT pass `spec=hid.device` to the base `MagicMock` —
-spec= would force `__getattr__` back to lazily-created `Any` attributes
-and undo the typing benefit. Runtime safety against typos comes from the
-explicit per-method assignments here; if a test calls a method we didn't
-declare, it'll get an auto-mock (same as plain `MagicMock`).
+`HidDeviceMock` is a plain class (NOT a `MagicMock` subclass) with no
+`__getattr__`, so accessing a method we didn't declare in `__init__`
+raises `AttributeError` instead of auto-creating a child mock. That's
+intentional: the trade-off for the typed-attribute benefit is losing
+`MagicMock`'s lazy method discovery. If `ak820ctl` calls a new
+`hid.device` method, add it to `__init__`.
 
-The factory helpers (`ack_packet`, `device_info_packet`) replace the
-inline 65-byte list construction that was repeated across
-`test_commands.py`, `test_perkey.py`, and `test_display.py`. They use
-named keyword arguments so a test only spells out the bytes it cares about.
+The factory helpers (`ack_packet`, `device_info_packet`,
+`perkey_response_packets`) build the 65-byte feature-report payloads
+used as `get_feature_report.side_effect` values; `perkey_response_packets`
+is used by `test_perkey.py`, the other two by `test_commands.py`.
+Named keyword arguments let each call site spell out only the bytes
+it cares about.
 """
 
 from __future__ import annotations

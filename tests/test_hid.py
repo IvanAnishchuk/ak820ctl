@@ -100,7 +100,7 @@ def test_open_device_calls_open_path() -> None:
     ):
         d = open_device()
     mock_dev.open_path.assert_called_once_with(b"/dev/hidraw3")
-    assert d is as_hid_device(mock_dev) or d is not None
+    assert d is as_hid_device(mock_dev)
 
 
 def test_open_device_with_explicit_path_skips_find() -> None:

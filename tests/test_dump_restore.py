@@ -41,8 +41,7 @@ def _mock_device() -> HidDeviceMock:
 
 def test_dump_settings() -> None:
     dev = _mock_device()
-    with patch("ak820ctl.commands.open_device", return_value=as_hid_device(dev)):
-        data = dump_settings(device=as_hid_device(dev))
+    data = dump_settings(device=as_hid_device(dev))
 
     assert isinstance(data, KeyboardDump)
     assert data.device.firmware == "1.20"
@@ -98,8 +97,7 @@ def test_restore_applies_lighting() -> None:
         ),
     )
 
-    with patch("ak820ctl.commands.open_device", return_value=as_hid_device(dev)):
-        actions = restore_settings(dump, device=as_hid_device(dev), skip_time=True)
+    actions = restore_settings(dump, device=as_hid_device(dev), skip_time=True)
 
     assert "lighting: breath" in actions
     assert dev.send_feature_report.call_count >= 3
@@ -111,8 +109,7 @@ def test_restore_syncs_time() -> None:
 
     dump = KeyboardDump(lighting=LightingConfig(mode="static"))
 
-    with patch("ak820ctl.commands.open_device", return_value=as_hid_device(dev)):
-        actions = restore_settings(dump, device=as_hid_device(dev), skip_time=False)
+    actions = restore_settings(dump, device=as_hid_device(dev), skip_time=False)
 
     assert "time: synced" in actions
 
@@ -123,8 +120,7 @@ def test_restore_skip_time() -> None:
 
     dump = KeyboardDump(lighting=LightingConfig(mode="off"))
 
-    with patch("ak820ctl.commands.open_device", return_value=as_hid_device(dev)):
-        actions = restore_settings(dump, device=as_hid_device(dev), skip_time=True)
+    actions = restore_settings(dump, device=as_hid_device(dev), skip_time=True)
 
     assert "time: synced" not in actions
 

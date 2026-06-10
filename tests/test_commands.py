@@ -25,7 +25,7 @@ from ak820ctl.commands import (
 )
 from ak820ctl.hid import REPORT_ID
 from ak820ctl.models import DeviceInfo, KeyboardDump, LightingConfig
-from tests.conftest import HidDeviceMock, as_hid_device
+from tests.conftest import HidDeviceMock, ack_packet, as_hid_device, device_info_packet
 
 
 def test_light_modes_complete() -> None:
@@ -119,21 +119,11 @@ def test_reverse_lookup_tables() -> None:
 def test_get_device_info_parses_response() -> None:
     """CMD 0x05 response parsed with correct LE byte offsets."""
     mock_device = HidDeviceMock()
-    # Simulate: send_report does one send, read_data discards ACK then reads data
-    # ACK echo, then real data (hidapi report ID 0x00 at index 0)
-    ack = [0x00, 0x04, 0x05] + [0x00] * 62
-    data = [0x00] * 65
-    data[1] = 0x40  # capabilities lo
-    data[2] = 0x30  # capabilities hi
-    data[5] = 0x45  # VID lo
-    data[6] = 0x0C  # VID hi
-    data[7] = 0x09  # PID lo
-    data[8] = 0x80  # PID hi
-    data[9] = 0x14  # FW lo (minor=20)
-    data[10] = 0x01  # FW hi (major=1)
-    data[11] = 0xFF
-    data[12] = 0xFF
-    mock_device.get_feature_report.side_effect = [ack, data]
+    # send_report does one send, read_data discards ACK then reads data.
+    mock_device.get_feature_report.side_effect = [
+        ack_packet(0x05),
+        device_info_packet(vid=0x0C45, pid=0x8009, fw_major=1, fw_minor=20, capabilities=0x3040),
+    ]
 
     with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
         info = get_device_info(device=as_hid_device(mock_device))
@@ -147,9 +137,7 @@ def test_get_device_info_parses_response() -> None:
 
 def test_get_device_info_opens_and_closes_device() -> None:
     mock_device = HidDeviceMock()
-    ack = [0x00] * 65
-    data = [0x00] * 65
-    mock_device.get_feature_report.side_effect = [ack, data]
+    mock_device.get_feature_report.side_effect = [ack_packet(0x05), device_info_packet()]
 
     with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
         _ = get_device_info()
@@ -170,11 +158,10 @@ def test_get_device_info_no_data() -> None:
 
 def test_get_firmware_version_delegates() -> None:
     mock_device = HidDeviceMock()
-    ack = [0x00] * 65
-    data = [0x00] * 65
-    data[9] = 0x14
-    data[10] = 0x01
-    mock_device.get_feature_report.side_effect = [ack, data]
+    mock_device.get_feature_report.side_effect = [
+        ack_packet(0x05),
+        device_info_packet(fw_major=1, fw_minor=20),
+    ]
 
     with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
         ver = get_firmware_version(device=as_hid_device(mock_device))
@@ -185,7 +172,7 @@ def test_get_firmware_version_delegates() -> None:
 def test_read_lighting_parses_response() -> None:
     """CMD 0x12 response parsed with correct +1 hidapi offset."""
     mock_device = HidDeviceMock()
-    ack = [0x00, 0x04, 0x12] + [0x00] * 62
+    ack = ack_packet(0x12)
     data = [0x00] * 65
     # hidapi byte 0 = report ID, data starts at byte 1
     data[1] = 0x01  # mode: static
@@ -214,10 +201,9 @@ def test_read_lighting_parses_response() -> None:
 
 def test_read_lighting_unknown_mode() -> None:
     mock_device = HidDeviceMock()
-    ack = [0x00] * 65
     data = [0x00] * 65
     data[1] = 0xFE  # unknown mode
-    mock_device.get_feature_report.side_effect = [ack, data]
+    mock_device.get_feature_report.side_effect = [ack_packet(0x12), data]
 
     with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
         cfg = read_lighting(device=as_hid_device(mock_device))
@@ -309,18 +295,14 @@ def test_set_sleep_opens_and_closes_device() -> None:
 def _device_info_responder(mock_device: HidDeviceMock) -> None:
     """Wire mock_device.get_feature_report to satisfy both get_device_info and
     read_lighting (each does ack -> data)."""
-    id_ack = [0x00, 0x04, 0x05] + [0x00] * 62
-    id_data = [0x00] * 65
-    id_data[5] = 0x45  # VID lo
-    id_data[6] = 0x0C  # VID hi
-    id_data[7] = 0x09
-    id_data[8] = 0x80
-    id_data[9] = 0x14  # FW minor
-    id_data[10] = 0x01  # FW major
-    light_ack = [0x00, 0x04, 0x12] + [0x00] * 62
     light_data = [0x00] * 65
     light_data[1] = 0x01  # static
-    mock_device.get_feature_report.side_effect = [id_ack, id_data, light_ack, light_data]
+    mock_device.get_feature_report.side_effect = [
+        ack_packet(0x05),
+        device_info_packet(vid=0x0C45, pid=0x8009, fw_major=1, fw_minor=20),
+        ack_packet(0x12),
+        light_data,
+    ]
 
 
 def test_dump_settings_opens_and_closes_device() -> None:
