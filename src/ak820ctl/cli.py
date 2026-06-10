@@ -394,9 +394,12 @@ def perkey(
             keys_list = [KeyColor(index=i, r=r, g=g, b=b) for i in range(NUM_KEYS)]
             label = f"All {NUM_KEYS} keys set to #{all_color.lstrip('#')}"
         elif key is not None:
+            # Parse all specs up front so a malformed spec fails fast without
+            # making a device round-trip — also lets the test suite cover
+            # parse errors without a keyboard attached.
+            parsed_specs = [parse_key_spec(spec, NUM_KEYS) for spec in key]
             keys_list = list(read_perkey_live())
-            for spec in key:
-                idx, (r, g, b) = parse_key_spec(spec, NUM_KEYS)
+            for idx, (r, g, b) in parsed_specs:
                 keys_list[idx] = KeyColor(index=idx, r=r, g=g, b=b)
             label = f"Updated {len(key)} key(s)"
         elif load is not None:
