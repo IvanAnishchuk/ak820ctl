@@ -58,15 +58,15 @@ class ThemeSource(BaseModel):
     """
 
     base: HexColor = "#000000"
-    groups: dict[str, HexColor] = Field(default_factory=dict)
-    overrides: dict[Key, HexColor] = Field(default_factory=dict)
+    groups: dict[str, HexColor] = {}
+    overrides: dict[Key, HexColor] = {}
 
 
 class KeyboardDump(BaseModel):
     """Complete keyboard settings snapshot."""
 
-    device: DeviceInfo = Field(default_factory=DeviceInfo)
-    lighting: LightingConfig = Field(default_factory=LightingConfig)
+    device: DeviceInfo = DeviceInfo()
+    lighting: LightingConfig = LightingConfig()
 
     def save(self, path: Path) -> None:
         """Write to JSON file."""

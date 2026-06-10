@@ -68,6 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `ThemeSource` and `KeyboardDump` use plain mutable defaults (`= {}`,
+  `= DeviceInfo()`, `= LightingConfig()`) instead of
+  `Field(default_factory=...)`; pydantic v2 deep-copies these
+  per-instance so behaviour is unchanged. Pinned by new
+  `tests/test_models.py`. Drops `models.py` mypy explicit-Any from
+  288 → 204 and omitted-generics from 101 → 45.
 - meson `mypy-strict` ninja target now emits every mypy report format
   (any-exprs, lineprecision, linecount, linecoverage, html, txt, xml,
   cobertura, junit, jsonl) alongside the pass/fail log. `lxml` and
