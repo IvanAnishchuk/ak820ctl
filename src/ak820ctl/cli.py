@@ -27,7 +27,19 @@ from ak820ctl.commands import (
     sync_time,
 )
 from ak820ctl.display import MAX_FRAMES, MAX_SLOT, load_animation, load_image, upload_image
-from ak820ctl.hid import DISPLAY_CHUNK_SIZE, PID, VID, find_device
+from ak820ctl.hid import (
+    DISPLAY_CHUNK_SIZE,
+    PACKET_SIZE,
+    PID,
+    REPORT_ID,
+    VID,
+    find_device,
+    make_packet,
+    open_device,
+    read_data,
+    send_report,
+    session_end,
+)
 from ak820ctl.keymap import KEYMAP_BYTES, read_keymap
 from ak820ctl.keys import KEY_INDEX, Key
 from ak820ctl.models import KeyboardDump, KeyColor, ThemeSource
@@ -489,6 +501,137 @@ def keymap(
         console.print(f"[red]Cannot write file:[/] {e}")
         raise typer.Exit(1) from None
     console.print(f"[green]Keymap saved to:[/] {save}")
+
+
+# Whitelist of opcodes the `probe` subcommand will issue. All are
+# documented as read-only in docs/STATUS.md / docs/unknown-commands.md
+# (the 0x10/0x14/0x16/0x26/0xE0 ones are unused by the vendor tool but
+# return a response without side-effects per Phase 3 analysis).
+PROBE_SAFE_CMDS: tuple[int, ...] = (0x05, 0x10, 0x12, 0x14, 0x15, 0x16, 0x26, 0xE0)
+
+# Refused with a clear error: these write flash or persist state.
+PROBE_DESTRUCTIVE_CMDS: dict[int, str] = {
+    0x11: "CMD_KEYMAP_DEFAULT — writes flash @ 0x9400 (V1.13 only)",
+    0x13: "CMD_SET_LIGHTING — writes flash @ 0x9800",
+    0x23: "CMD_WRITE_PERKEY — writes per-key buffer",
+    0x27: "CMD_KEYMAP_ALT — writes flash @ 0xAC00",
+    0x38: "unknown — vendor tool never sends; treat as destructive",
+}
+
+PROBE_HEX_PREVIEW_BYTES = 32  # first N bytes of each response shown inline
+
+
+def _probe_one(cmd_byte: int) -> list[list[int]]:
+    """Send one safe read command and collect the response packets."""
+    device = open_device()
+    try:
+        # Single-packet read pattern (count=9 in the request matches the
+        # perkey/keymap reads — firmware caps at its own buffer size).
+        send_report(
+            device,
+            make_packet(REPORT_ID, cmd_byte, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09),
+        )
+        packets = read_data(device, count=9)
+        # End the session so a subsequent probe isn't dropped silently.
+        session_end(device)
+    finally:
+        device.close()
+    return packets
+
+
+def format_probe_summary(cmd_byte: int, packets: list[list[int]]) -> str:
+    n_payload = sum(len(p) for p in packets)
+    if not packets:
+        return f"CMD 0x{cmd_byte:02x}: 0 packets (no response)"
+    head = bytes(packets[0][1 : 1 + PROBE_HEX_PREVIEW_BYTES]).hex()
+    return f"CMD 0x{cmd_byte:02x}: {len(packets)} packet(s), {n_payload} B; head: {head}"
+
+
+def write_probe_response(out_dir: Path, cmd_byte: int, packets: list[list[int]]) -> None:
+    raw = bytearray()
+    for pkt in packets:
+        # strip the hidapi report-ID prefix the same way parse_keymap_data does
+        body = pkt[1:] if len(pkt) > PACKET_SIZE else pkt
+        raw.extend(body[:PACKET_SIZE])
+    out_path = out_dir / f"cmd_{cmd_byte:02x}.bin"
+    _ = out_path.write_bytes(bytes(raw))
+
+
+@app.command()
+def probe(
+    cmd: Annotated[
+        str | None,
+        typer.Option(
+            "--cmd",
+            help="Single CMD opcode to probe as hex (e.g. 0x15). Must be in the safe whitelist.",
+        ),
+    ] = None,
+    all_cmds: Annotated[
+        bool,
+        typer.Option("--all", help="Probe every safe CMD in the whitelist."),
+    ] = False,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            help="Directory to dump raw response bytes per CMD (one file per opcode).",
+        ),
+    ] = None,
+) -> None:
+    """Send safe read-only CMDs and print their response shapes.
+
+    Useful for live verification of canonical findings without leaving
+    the project. Refuses destructive opcodes (0x11 / 0x13 / 0x23 / 0x27 /
+    0x38). The keymap-write / per-key-write paths land later (plan2.md
+    Tier E) with `--confirm` gating.
+    """
+    if cmd is None and not all_cmds:
+        console.print("[yellow]No action selected.[/] Pass --cmd HEX or --all.")
+        raise typer.Exit(1)
+
+    targets: list[int] = []
+    if all_cmds:
+        targets = list(PROBE_SAFE_CMDS)
+    if cmd is not None:
+        try:
+            cmd_int = int(cmd, 16)
+        except ValueError:
+            console.print(f"[red]Invalid hex value for --cmd:[/] {cmd}")
+            raise typer.Exit(1) from None
+        if cmd_int in PROBE_DESTRUCTIVE_CMDS:
+            why = PROBE_DESTRUCTIVE_CMDS[cmd_int]
+            console.print(
+                f"[red]Refusing destructive CMD 0x{cmd_int:02x}:[/] {why}."
+                f" Destructive opcodes will land behind --confirm in a later release."
+            )
+            raise typer.Exit(1)
+        if cmd_int not in PROBE_SAFE_CMDS:
+            allowed = ", ".join(f"0x{c:02x}" for c in PROBE_SAFE_CMDS)
+            console.print(
+                f"[red]CMD 0x{cmd_int:02x} not in the safe whitelist.[/] Allowed: {allowed}"
+            )
+            raise typer.Exit(1)
+        if cmd_int not in targets:
+            targets.append(cmd_int)
+
+    if output_dir is not None:
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            console.print(f"[red]Cannot create output dir:[/] {e}")
+            raise typer.Exit(1) from None
+
+    for cmd_byte in targets:
+        try:
+            packets = _probe_one(cmd_byte)
+        except RuntimeError as e:
+            console.print(f"[red]CMD 0x{cmd_byte:02x} failed:[/] {e}")
+            continue
+        console.print(format_probe_summary(cmd_byte, packets))
+        if output_dir is not None:
+            write_probe_response(output_dir, cmd_byte, packets)
+    if output_dir is not None:
+        console.print(f"[green]Probe responses written to:[/] {output_dir}")
 
 
 def _read_data_text(*parts: str) -> str:

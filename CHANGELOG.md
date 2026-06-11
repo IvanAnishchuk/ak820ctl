@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `probe` subcommand: send safe read-only CMDs and print response
+  shapes. `--cmd HEX` runs a single opcode against the whitelist
+  (0x05 / 0x10 / 0x12 / 0x14 / 0x15 / 0x16 / 0x26 / 0xE0);
+  `--all` runs the whole whitelist; `--output-dir PATH` dumps raw
+  responses to one file per opcode. Refuses destructive opcodes
+  (0x11 / 0x13 / 0x23 / 0x27 / 0x38) with a clear error pointing at
+  the write surface (Tier E). Useful for live verification of
+  canonical findings without leaving the project.
 - `keymap` subcommand: reads the stored keymap buffer via CMD 0x15
   (49 chunks x 64 bytes = 3,136 raw bytes). `keymap --dump` writes
   `{"size", "hex"}` JSON to stdout; `keymap --save PATH` writes the

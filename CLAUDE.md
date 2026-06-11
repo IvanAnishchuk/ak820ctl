@@ -220,6 +220,14 @@ here — flag them when relevant, don't silently implement during unrelated work
   comments) and `gh pr view <N> --json reviews` (top-level reviews) and
   address each finding — fix or explicitly justify dismissing it — before
   asking the user to merge. Don't rely on green CI alone.
+- **Imports go at the top of the file.** Never silence ruff `PLC0415`
+  (import-outside-top-level) with `# noqa` just to keep a patch small or
+  to "scope" a constant. The only acceptable inline-import reasons are
+  (a) a real circular dependency that can't be broken with a typing-only
+  import, (b) a heavy optional dependency that legitimately needs lazy
+  loading, or (c) deferred filesystem-touching imports inside test
+  helpers. "Keeps the diff focused" is NOT a real reason — move the
+  import to the top.
 - **Always update `CHANGELOG.md` when you change behavior.** Any commit
   touching `src/` or `scripts/` (CLI surface, protocol, build/install
   flows) gets an entry under `## [Unreleased]` in the appropriate
