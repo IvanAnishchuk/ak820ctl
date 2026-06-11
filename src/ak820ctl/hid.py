@@ -154,14 +154,18 @@ def _is_ack_echo(pkt: list[int], cmd_byte: int) -> bool:
     The vendor firmware echoes the request packet back as the first
     response on the GET_REPORT pipe. After the hidapi report-id prefix
     (`pkt[0] == 0x00`), the echo starts with `[REPORT_ID, cmd_byte, 0x00,
-    <varbyte>, 0x00, 0x00, 0x00, 0x00, …]`. The four-zero stretch at
-    `pkt[5:9]` mirrors the unused arg bytes of `make_packet` and gives us
-    a strong fingerprint that real data packets are very unlikely to hit.
+    <varbyte>, 0x00, 0x00, 0x00, 0x00, ...]`. The four-zero stretch at
+    `pkt[5:9]` mirrors the unused arg bytes of `make_packet` and combined
+    with the leading prefix + REPORT_ID + cmd_byte + the post-cmd zero
+    gives us a strong fingerprint that real data packets are very unlikely
+    to hit.
     """
     return (
         len(pkt) >= _ACK_ECHO_MIN_LEN
+        and pkt[0] == 0
         and pkt[1] == REPORT_ID
         and pkt[2] == cmd_byte
+        and pkt[3] == 0
         and pkt[5] == 0
         and pkt[6] == 0
         and pkt[7] == 0
@@ -194,14 +198,19 @@ def read_data(device: hid.device, cmd_byte: int, count: int = 1) -> list[list[in
             break
         time.sleep(FW_DELAY)
         if _is_ack_echo(pkt, cmd_byte):
-            drained += 1
-            if drained > MAX_ACK_DRAINS:
+            if drained >= MAX_ACK_DRAINS:
+                # Hit the bound — this packet is the (MAX_ACK_DRAINS+1)-th
+                # echo, and we refuse to keep draining. Don't count it so
+                # the trailing summary log reports the configured bound
+                # exactly, not one over.
                 logger.debug(
-                    "read_data: drained %d ACK echo(es) for CMD 0x%02x without data; giving up",
-                    drained,
+                    "read_data: drained MAX_ACK_DRAINS (%d) echoes for CMD 0x%02x "
+                    "without data; giving up",
+                    MAX_ACK_DRAINS,
                     cmd_byte,
                 )
                 break
+            drained += 1
             continue
         packets.append(pkt)
     if drained:

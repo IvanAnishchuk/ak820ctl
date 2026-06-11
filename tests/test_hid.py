@@ -248,14 +248,15 @@ def test_read_data_does_not_drain_other_cmd_echoes() -> None:
 
 def test_read_data_drain_safety_bound() -> None:
     """If the firmware is stuck emitting ACK echoes forever, read_data
-    bails out after MAX_ACK_DRAINS rather than looping unbounded."""
+    bails out after MAX_ACK_DRAINS rather than looping unbounded. The
+    classifier reads exactly MAX_ACK_DRAINS+1 packets: the first
+    MAX_ACK_DRAINS are drained, and the +1 trips the bound check."""
     mock_dev = HidDeviceMock()
     cmd = 0x05
     mock_dev.get_feature_report.return_value = ack_packet(cmd)
     packets = read_data(as_hid_device(mock_dev), cmd, count=1)
     assert packets == []
-    # Bounded — we shouldn't have made more than MAX_ACK_DRAINS+1 calls.
-    assert mock_dev.get_feature_report.call_count <= MAX_ACK_DRAINS + 1
+    assert mock_dev.get_feature_report.call_count == MAX_ACK_DRAINS + 1
 
 
 def test_read_data_collects_multiple_data_packets() -> None:
