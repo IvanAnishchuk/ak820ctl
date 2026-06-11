@@ -28,7 +28,7 @@ def test_keyboard_dump_default_submodels_are_per_instance() -> None:
     b = KeyboardDump()
     assert a.device is not b.device
     assert a.lighting is not b.lighting
-    a.device.firmware = "v1.20"
+    a.device.firmware = "v1.14"
     a.lighting.mode = "custom"
     assert b.device.firmware == "unknown"
     assert b.lighting.mode == "off"

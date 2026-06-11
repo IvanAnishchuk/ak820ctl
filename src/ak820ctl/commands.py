@@ -243,7 +243,9 @@ def get_device_info(device: hid.device | None = None) -> DeviceInfo:
         return DeviceInfo(
             vid=vid,
             pid=pid,
-            firmware=f"{fw_major}.{fw_minor:02d}",
+            # AK820 firmware versions are BCD-like: byte 9 = 0x14 means
+            # V1.14, not V1.20. Match lsusb bcdDevice by formatting in hex.
+            firmware=f"{fw_major:x}.{fw_minor:02x}",
             firmware_raw=fw_raw,
             capabilities=buf[1] | (buf[2] << 8),
         )

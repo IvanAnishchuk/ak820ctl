@@ -49,7 +49,7 @@ evidence trail (decompiled `FUN_00418420` etc.).
 | 3A | Acquire + triage Windows .exe (`vendor/windows/`) | ✅ |
 | 3B | Extract HID literals + cross-refs from .exe (`ghidra-output/windows/`) | ✅ |
 | 3C | Identify CMD codes the Windows tool sends ([`windows-driver-analysis.md`](windows-driver-analysis.md)) | ✅ |
-| 4A | LCD chunk size = 4123 ([`PROTOCOL.md`](PROTOCOL.md)) | ✅ |
+| 4A | LCD chunk size = 4123 ([`PROTOCOL.md`](PROTOCOL.md)) | ⚠ unconfirmed on V1.14 — see PROTOCOL.md §LCD Image Upload |
 | 4B | Citations + lsusb capture (`dumps/lsusb.txt`) | ✅ |
 | 4C | VIA dual-mode variant ([`PROTOCOL.md`](PROTOCOL.md)) | ✅ |
 | 4D | Update STATUS.md | ✅ (this file) |
@@ -64,7 +64,7 @@ evidence trail (decompiled `FUN_00418420` etc.).
 | "cmd 0x11's flash write at 0x9400 is a V1.13 debug artifact" | Wrong — it's the **default-layer keymap write**, intentional. |
 | "no firmware has the keymap-write path" | Wrong — V1.13 has both layers (0x11 + 0x27), other firmwares have only 0x27. |
 | "the Windows tool probably uses VIA mode for remap" | Wrong — it uses the proprietary `0x11`/`0x27` path. VIA support is unrelated. |
-| "LCD chunks are 4096 bytes" | LCD chunks are **4123 bytes** on the wire (4096 + 27-byte trailer). Confirmed empirically + via 2 reference impls. |
+| "LCD chunks are 4096 bytes" | Canonical claim is **4123 bytes** on the wire (4096 + 27-byte trailer) — sourced from 2 reference impls (`epomaker-ak820-pro`, `ajazz-keyboard-linux-cpp`). **Unconfirmed on V1.14:** ak820ctl tested the 4123-byte form against a live AK820 Pro V1.14 and rendering came out garbled every retry. The 4097-byte (4096 + hidapi report-ID prefix + short-packet boundary) form works reliably. May be firmware-specific (analysed blob is V1.13); see [`PROTOCOL.md`](PROTOCOL.md) §LCD Image Upload. |
 
 ## What the Windows tool sends
 

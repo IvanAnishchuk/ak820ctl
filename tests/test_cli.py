@@ -489,12 +489,12 @@ def test_sleep_runtime_error_exits_1(mock_set: MagicMock) -> None:
 @patch("ak820ctl.cli.find_device")
 def test_info_succeeds_prints_firmware(mock_find: MagicMock, mock_info: MagicMock) -> None:
     mock_find.return_value = b"/dev/hidraw3"
-    mock_info.return_value = DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20")
+    mock_info.return_value = DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.14")
     result = runner.invoke(app, ["info"])
     assert result.exit_code == 0
     assert "Found AK820" in result.output
     assert "/dev/hidraw3" in result.output
-    assert "v1.20" in result.output
+    assert "v1.14" in result.output
 
 
 # ---------------------------- dump ----------------------------
@@ -503,19 +503,19 @@ def test_info_succeeds_prints_firmware(mock_find: MagicMock, mock_info: MagicMoc
 @patch("ak820ctl.cli.dump_settings")
 def test_dump_to_stdout(mock_dump: MagicMock) -> None:
     mock_dump.return_value = KeyboardDump(
-        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.14"),
         lighting=LightingConfig(mode="static", r=0xFF),
     )
     result = runner.invoke(app, ["dump"])
     assert result.exit_code == 0
-    assert "1.20" in result.output
+    assert "1.14" in result.output
     assert "static" in result.output
 
 
 @patch("ak820ctl.cli.dump_settings")
 def test_dump_to_file_writes_json(mock_dump: MagicMock, tmp_path: Path) -> None:
     mock_dump.return_value = KeyboardDump(
-        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.14"),
         lighting=LightingConfig(mode="breath"),
     )
     out = tmp_path / "settings.json"
@@ -523,7 +523,7 @@ def test_dump_to_file_writes_json(mock_dump: MagicMock, tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "saved to" in result.output.lower()
     data = cast("dict[str, dict[str, object]]", json.loads(out.read_text(encoding="utf-8")))
-    assert data["device"]["firmware"] == "1.20"
+    assert data["device"]["firmware"] == "1.14"
     assert data["lighting"]["mode"] == "breath"
 
 
@@ -635,7 +635,7 @@ def test_gif_oserror_on_load(mock_load: MagicMock, tmp_path: Path) -> None:
 def test_restore_succeeds(mock_restore: MagicMock, tmp_path: Path) -> None:
     """`restore FILE` reads JSON, calls restore_settings, prints actions."""
     dump = KeyboardDump(
-        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.14"),
         lighting=LightingConfig(mode="breath"),
     )
     f = tmp_path / "backup.json"

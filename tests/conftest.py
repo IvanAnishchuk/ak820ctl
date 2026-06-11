@@ -109,12 +109,15 @@ def device_info_packet(
     *,
     vid: int = 0x0C45,
     pid: int = 0x8009,
-    fw_major: int = 1,
-    fw_minor: int = 20,
+    fw_major: int = 0x01,
+    fw_minor: int = 0x14,
     capabilities: int = 0x3040,
 ) -> list[int]:
     """65-byte CMD 0x05 device-info response with VID/PID/FW/caps at
     the wire offsets parsed by `commands.get_device_info`.
+
+    `fw_major` / `fw_minor` are raw bytes; the firmware encodes the
+    version in BCD-like form (byte 9 = `0x14` displays as V1.14).
     """
     pkt = [0x00] * 65
     pkt[1] = capabilities & 0xFF

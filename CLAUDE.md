@@ -204,6 +204,28 @@ here — flag them when relevant, don't silently implement during unrelated work
 - **VIA-mode dual identity.** AK820 Pro also ships VID `0x3151` / PID `0x4021` running
   standard `id_dynamic_keymap_*` over report ID `0x04`. Mode-switch mechanism still unknown
   — see `docs/PROTOCOL.md` §VIA-mode variant.
+- **LCD partial-frame status bar.** V1.14 firmware accepts `CMD_IMAGE` with
+  `n_chunks=1` and a 4096-byte payload (256-byte header + 3840 bytes of pixel
+  data ≈ top 15 rows of the 128-wide LCD), leaving the rest of the frame
+  buffer untouched from the previous full upload. Each partial upload takes
+  ~500ms wall-clock at default `DISPLAY_ACK_TIMEOUT_MS=300`. Feature shape:
+  `ak820ctl status-bar TEXT_OR_IMAGE [--rows N] [--bg-image FILE]` — composes
+  a partial frame on top of a known background image. Useful for progress
+  bars, build/CI status, calendar pop, etc. Verified live; not exposed yet.
+  See `scratch_single_chunk.py` for the working experiment.
+- **`read_data` ACK-ordering robustness.** `hid.read_data` discards the first
+  feature-report packet as ACK and treats the next N as data. The wire format
+  doesn't cleanly distinguish ACK echoes (which start with `[0x04, <cmd>, …]`)
+  from data, so when there's any stale state on the kernel queue — common
+  after a state-changing command (light/sleep/time) — the offset is wrong and
+  callers read echo-of-request instead of data. Symptoms: `info` reporting
+  "v0.01" on the second call; the probe-after-mutation experiment
+  (`scratch_probe_after_mutation.py`) producing only echo bytes regardless of
+  whether lighting actually changed. Future fix: classify packets by shape
+  (`packet[1] == REPORT_ID && packet[2] == cmd_byte ⇒ ACK echo, otherwise
+  data`) and drain ACKs until a data packet appears, or open a fresh handle
+  per multi-step probe. Until this lands, probing is only reliable for the
+  first command issued against a freshly-opened device.
 
 ## Conventions
 
@@ -220,6 +242,14 @@ here — flag them when relevant, don't silently implement during unrelated work
   comments) and `gh pr view <N> --json reviews` (top-level reviews) and
   address each finding — fix or explicitly justify dismissing it — before
   asking the user to merge. Don't rely on green CI alone.
+- **Imports go at the top of the file.** Never silence ruff `PLC0415`
+  (import-outside-top-level) with `# noqa` just to keep a patch small or
+  to "scope" a constant. The only acceptable inline-import reasons are
+  (a) a real circular dependency that can't be broken with a typing-only
+  import, (b) a heavy optional dependency that legitimately needs lazy
+  loading, or (c) deferred filesystem-touching imports inside test
+  helpers. "Keeps the diff focused" is NOT a real reason — move the
+  import to the top.
 - **Always update `CHANGELOG.md` when you change behavior.** Any commit
   touching `src/` or `scripts/` (CLI surface, protocol, build/install
   flows) gets an entry under `## [Unreleased]` in the appropriate
