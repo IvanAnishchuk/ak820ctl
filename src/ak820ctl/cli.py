@@ -542,7 +542,7 @@ def probe_one(cmd_byte: int) -> list[list[int]]:
             device,
             make_packet(REPORT_ID, cmd_byte, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, count),
         )
-        packets = read_data(device, count=count)
+        packets = read_data(device, cmd_byte, count=count)
         # End the session so a subsequent probe isn't dropped silently.
         session_end(device)
     finally:

@@ -73,7 +73,7 @@ def read_keymap(device: hid.device | None = None) -> bytes:
             REPORT_ID, CMD_READ_KEYMAP, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, NUM_KEYMAP_CHUNKS
         )
         send_report(device, cmd)
-        packets = read_data(device, count=NUM_KEYMAP_CHUNKS)
+        packets = read_data(device, CMD_READ_KEYMAP, count=NUM_KEYMAP_CHUNKS)
 
         # Reset the state machine the same way perkey.read_perkey_stored does.
         session_save(device)

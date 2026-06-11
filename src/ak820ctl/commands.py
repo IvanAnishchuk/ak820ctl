@@ -13,6 +13,7 @@ from ak820ctl.hid import (
     read_data,
     send_command,
     send_report,
+    session_end,
     session_save,
     session_start,
 )
@@ -228,7 +229,11 @@ def get_device_info(device: hid.device | None = None) -> DeviceInfo:
             device,
             make_packet(REPORT_ID, CMD_READ_ID, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01),
         )
-        packets = read_data(device, count=1)
+        packets = read_data(device, CMD_READ_ID, count=1)
+        # Reset the firmware state machine so a follow-up read on the same
+        # handle gets fresh data instead of repeated echoes of this request.
+        session_save(device)
+        session_end(device)
         if not packets:
             return DeviceInfo()
 
@@ -270,7 +275,11 @@ def read_lighting(device: hid.device | None = None) -> LightingConfig:
             device,
             make_packet(REPORT_ID, CMD_READ_LIGHTING, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01),
         )
-        packets = read_data(device, count=1)
+        packets = read_data(device, CMD_READ_LIGHTING, count=1)
+        # Reset the firmware state machine so a follow-up read on the same
+        # handle gets fresh data instead of repeated echoes of this request.
+        session_save(device)
+        session_end(device)
         if not packets:
             return LightingConfig()
 

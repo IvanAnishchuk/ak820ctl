@@ -11,8 +11,9 @@ from hypothesis import strategies as st
 from typer.testing import CliRunner
 
 from ak820ctl.cli import app
+from ak820ctl.commands import CMD_READ_KEYMAP
 from ak820ctl.keymap import KEYMAP_BYTES, NUM_KEYMAP_CHUNKS, parse_keymap_data, read_keymap
-from tests.conftest import HidDeviceMock, as_hid_device, keymap_response_packets
+from tests.conftest import HidDeviceMock, ack_packet, as_hid_device, keymap_response_packets
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -78,7 +79,7 @@ class TestReadKeymap:
         dev = HidDeviceMock()
         payload = bytes((i * 7 + 3) & 0xFF for i in range(KEYMAP_BYTES))
         dev.get_feature_report.side_effect = [
-            [0] * 65,  # ACK (discarded by read_data)
+            ack_packet(CMD_READ_KEYMAP),  # drained by read_data classifier
             *keymap_response_packets(payload),
         ]
         parsed = read_keymap(device=as_hid_device(dev))
