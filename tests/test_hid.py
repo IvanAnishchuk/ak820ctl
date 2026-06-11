@@ -10,6 +10,7 @@ from ak820ctl.hid import (
     DISPLAY_INTERFACE,
     DISPLAY_USAGE_PAGE,
     INTERFACE,
+    MAX_ACK_DRAINS,
     PACKET_SIZE,
     PID,
     REPORT_ID,
@@ -22,7 +23,7 @@ from ak820ctl.hid import (
     read_data,
     send_command,
 )
-from tests.conftest import HidDeviceMock, as_hid_device
+from tests.conftest import HidDeviceMock, ack_packet, as_hid_device
 
 
 def test_make_packet_default_size() -> None:
@@ -174,28 +175,98 @@ def test_send_command_swallows_oserror_on_get_feature_report() -> None:
 def test_read_data_returns_packets_until_oserror() -> None:
     """Stops the read loop on OSError, returning what was collected so far."""
     mock_dev = HidDeviceMock()
+    cmd = 0x05
     p1 = [0x00, 0x11] + [0] * 63
     p2 = [0x00, 0x22] + [0] * 63
-    # First call is the ACK discard, then 2 successful reads, then OSError.
+    # ACK echo first (drained by the classifier), then 2 data packets, then OSError.
     mock_dev.get_feature_report.side_effect = [
-        [0] * 65,  # ACK
+        ack_packet(cmd),
         p1,
         p2,
         OSError("read failed"),
     ]
-    packets = read_data(as_hid_device(mock_dev), count=5)
+    packets = read_data(as_hid_device(mock_dev), cmd, count=5)
     assert len(packets) == 2
     assert packets[0][1] == 0x11
     assert packets[1][1] == 0x22
 
 
-def test_read_data_handles_ack_oserror() -> None:
-    """OSError on the ACK discard is logged and ignored; data reads proceed."""
+def test_read_data_handles_first_read_oserror() -> None:
+    """OSError on the very first read aborts and returns an empty list."""
     mock_dev = HidDeviceMock()
-    mock_dev.get_feature_report.side_effect = [
-        OSError("ack failed"),
-        [0x00, 0x42] + [0] * 63,
-    ]
-    packets = read_data(as_hid_device(mock_dev), count=1)
+    mock_dev.get_feature_report.side_effect = OSError("read failed")
+    packets = read_data(as_hid_device(mock_dev), 0x05, count=1)
+    assert packets == []
+
+
+def test_read_data_data_first_is_treated_as_data() -> None:
+    """When the queue has no leading ACK echo (data-first ordering), the
+    first packet is data, not silently discarded as ACK like the old code did.
+
+    This is the core of the ACK-classification fix: previously the first
+    GET_REPORT was always treated as ACK by position, so any data-first
+    response was eaten and the next read returned stale/wrong bytes.
+    """
+    mock_dev = HidDeviceMock()
+    data = [0x00, 0x40, 0x30] + [0] * 62
+    mock_dev.get_feature_report.return_value = data
+    packets = read_data(as_hid_device(mock_dev), 0x05, count=1)
     assert len(packets) == 1
-    assert packets[0][1] == 0x42
+    assert packets[0] == data
+    # Only one GET_REPORT was needed — no extra ACK drain.
+    assert mock_dev.get_feature_report.call_count == 1
+
+
+def test_read_data_drains_stale_ack_echoes_before_data() -> None:
+    """Multiple ACK echoes for our cmd_byte sitting on the queue are drained
+    until the real data packet appears."""
+    mock_dev = HidDeviceMock()
+    cmd = 0x12
+    data = [0x00, 0x01, 0xAA, 0xBB, 0xCC] + [0] * 60
+    mock_dev.get_feature_report.side_effect = [
+        ack_packet(cmd),  # stale echo from a prior read
+        ack_packet(cmd),  # stale echo from a prior read
+        data,
+    ]
+    packets = read_data(as_hid_device(mock_dev), cmd, count=1)
+    assert len(packets) == 1
+    assert packets[0] == data
+    assert mock_dev.get_feature_report.call_count == 3
+
+
+def test_read_data_does_not_drain_other_cmd_echoes() -> None:
+    """An ACK echo carrying a *different* cmd_byte is NOT treated as our
+    echo — it's a data packet from someone else's perspective and we
+    return it as-is. Prevents over-draining when the queue holds residue
+    from another command path."""
+    mock_dev = HidDeviceMock()
+    other_echo = ack_packet(0x99)
+    mock_dev.get_feature_report.return_value = other_echo
+    packets = read_data(as_hid_device(mock_dev), 0x05, count=1)
+    assert packets == [other_echo]
+
+
+def test_read_data_drain_safety_bound() -> None:
+    """If the firmware is stuck emitting ACK echoes forever, read_data
+    bails out after MAX_ACK_DRAINS rather than looping unbounded. The
+    classifier reads exactly MAX_ACK_DRAINS+1 packets: the first
+    MAX_ACK_DRAINS are drained, and the +1 trips the bound check."""
+    mock_dev = HidDeviceMock()
+    cmd = 0x05
+    mock_dev.get_feature_report.return_value = ack_packet(cmd)
+    packets = read_data(as_hid_device(mock_dev), cmd, count=1)
+    assert packets == []
+    assert mock_dev.get_feature_report.call_count == MAX_ACK_DRAINS + 1
+
+
+def test_read_data_collects_multiple_data_packets() -> None:
+    """count > 1: classifier collects exactly `count` data packets, ignoring
+    any leading ACK echo."""
+    mock_dev = HidDeviceMock()
+    cmd = 0xF5
+    d0 = [0x00, 0x00, 0xAA] + [0] * 62
+    d1 = [0x00, 0x10, 0xBB] + [0] * 62
+    d2 = [0x00, 0x20, 0xCC] + [0] * 62
+    mock_dev.get_feature_report.side_effect = [ack_packet(cmd), d0, d1, d2]
+    packets = read_data(as_hid_device(mock_dev), cmd, count=3)
+    assert packets == [d0, d1, d2]

@@ -122,7 +122,7 @@ def read_perkey_live(device: hid.device | None = None) -> list[KeyColor]:
     try:
         cmd = make_packet(REPORT_ID, CMD_READ_PERKEY, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09)
         send_report(device, cmd)
-        packets = read_data(device, count=NUM_PACKETS)
+        packets = read_data(device, CMD_READ_PERKEY, count=NUM_PACKETS)
 
         # Reset state machine
         session_save(device)
@@ -145,7 +145,7 @@ def read_perkey_stored(device: hid.device | None = None) -> list[KeyColor]:
 
         cmd = make_packet(REPORT_ID, CMD_READ_STORED, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09)
         send_report(device, cmd)
-        packets = read_data(device, count=NUM_PACKETS)
+        packets = read_data(device, CMD_READ_STORED, count=NUM_PACKETS)
 
         # Reset state machine
         session_save(device)

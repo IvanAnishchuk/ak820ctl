@@ -17,7 +17,7 @@ from ak820ctl.cli import (
     probe_one,
     write_probe_response,
 )
-from tests.conftest import HidDeviceMock, as_hid_device
+from tests.conftest import HidDeviceMock, ack_packet, as_hid_device
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -62,9 +62,11 @@ class TestProbeSingle:
     @patch("ak820ctl.cli.open_device")
     def test_cmd_single_succeeds(self, mock_open: MagicMock) -> None:
         dev = HidDeviceMock()
-        # Return two non-empty packets, then nothing.
+        # ACK echo first (drained by the classifier), then the data packet
+        # that probe_one collects + a trailing handshake response for the
+        # session_end the function issues after the read.
         dev.get_feature_report.side_effect = [
-            [0x00] * 65,  # ACK discarded
+            ack_packet(0x05),
             [0x00] + [0x42] * 64,
             [0x00] + [0x99] * 64,
             *([OSError("done")] * 10),

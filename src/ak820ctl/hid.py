@@ -137,29 +137,89 @@ def send_command(device: hid.device, data: bytes) -> None:
         logger.debug("GET_REPORT handshake STALL (expected for some commands)")
 
 
-def read_data(device: hid.device, count: int = 1) -> list[list[int]]:
-    """Read data packets after a command, discarding the initial ACK.
+# Safety bound: how many ACK-echo packets `read_data` will drain before it
+# gives up and returns whatever data it has. The firmware empirically emits
+# 0-1 ACK echoes per request, but a stuck queue can hold more after a
+# mutation that left state dangling. 16 is generous without being unbounded.
+MAX_ACK_DRAINS = 16
 
-    The first GET_REPORT after a read command is an echo/ACK — discard it.
-    Then read `count` actual data packets.
+# Minimum packet length required to fingerprint an ACK echo (we read up to
+# pkt[8] in `_is_ack_echo`).
+_ACK_ECHO_MIN_LEN = 9
+
+
+def _is_ack_echo(pkt: list[int], cmd_byte: int) -> bool:
+    """Return True if `pkt` looks like the firmware's echo of our request.
+
+    The vendor firmware echoes the request packet back as the first
+    response on the GET_REPORT pipe. After the hidapi report-id prefix
+    (`pkt[0] == 0x00`), the echo starts with `[REPORT_ID, cmd_byte, 0x00,
+    <varbyte>, 0x00, 0x00, 0x00, 0x00, ...]`. The four-zero stretch at
+    `pkt[5:9]` mirrors the unused arg bytes of `make_packet` and combined
+    with the leading prefix + REPORT_ID + cmd_byte + the post-cmd zero
+    gives us a strong fingerprint that real data packets are very unlikely
+    to hit.
     """
-    # Discard ACK
-    try:
-        _ = device.get_feature_report(0x00, 65)
-    except OSError:
-        logger.debug("ACK read failed")
-    time.sleep(FW_DELAY)
+    return (
+        len(pkt) >= _ACK_ECHO_MIN_LEN
+        and pkt[0] == 0
+        and pkt[1] == REPORT_ID
+        and pkt[2] == cmd_byte
+        and pkt[3] == 0
+        and pkt[5] == 0
+        and pkt[6] == 0
+        and pkt[7] == 0
+        and pkt[8] == 0
+    )
 
+
+def read_data(device: hid.device, cmd_byte: int, count: int = 1) -> list[list[int]]:
+    """Read `count` data packets in response to CMD `cmd_byte`.
+
+    Classifies each feature-report packet by shape rather than position:
+    packets matching the ACK-echo signature for `cmd_byte` are drained,
+    everything else is treated as data. This tolerates either ACK-first
+    or data-first ordering on the kernel queue, which empirically varies
+    across calls on the same device handle (see CHANGELOG: read_data
+    ACK-ordering fix).
+
+    Drains at most `MAX_ACK_DRAINS` echoes before giving up; an OSError
+    from `get_feature_report` ends the read and returns what was collected.
+    """
     packets: list[list[int]] = []
-    for _ in range(count):
+    drained = 0
+    for _ in range(count + MAX_ACK_DRAINS):
+        if len(packets) >= count:
+            break
         try:
             pkt = device.get_feature_report(0x00, 65)
-            packets.append(pkt)
         except OSError:
-            logger.debug("Data packet read failed")
+            logger.debug("read_data: get_feature_report failed")
             break
         time.sleep(FW_DELAY)
-
+        if _is_ack_echo(pkt, cmd_byte):
+            if drained >= MAX_ACK_DRAINS:
+                # Hit the bound — this packet is the (MAX_ACK_DRAINS+1)-th
+                # echo, and we refuse to keep draining. Don't count it so
+                # the trailing summary log reports the configured bound
+                # exactly, not one over.
+                logger.debug(
+                    "read_data: drained MAX_ACK_DRAINS (%d) echoes for CMD 0x%02x "
+                    "without data; giving up",
+                    MAX_ACK_DRAINS,
+                    cmd_byte,
+                )
+                break
+            drained += 1
+            continue
+        packets.append(pkt)
+    if drained:
+        logger.debug(
+            "read_data: drained %d ACK echo(es) for CMD 0x%02x before %d data packet(s)",
+            drained,
+            cmd_byte,
+            len(packets),
+        )
     return packets
 
 

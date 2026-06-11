@@ -17,6 +17,8 @@ from ak820ctl.hid import PACKET_SIZE, REPORT_ID
 from ak820ctl.models import KeyColor
 from ak820ctl.perkey import (
     CMD_CUSTOM_LIGHT,
+    CMD_READ_PERKEY,
+    CMD_READ_STORED,
     NUM_KEYS,
     NUM_PACKETS,
     build_perkey_data,
@@ -25,7 +27,7 @@ from ak820ctl.perkey import (
     read_perkey_stored,
     write_perkey,
 )
-from tests.conftest import HidDeviceMock, as_hid_device, perkey_response_packets
+from tests.conftest import HidDeviceMock, ack_packet, as_hid_device, perkey_response_packets
 
 # ── Data building ────────────────────────────────────────────────────────────
 
@@ -180,9 +182,10 @@ class TestReadPerkeyLive:
         """Mock the device's get_feature_report to play back a real
         9-packet payload; verify the parse roundtrips back to varied_keys."""
         dev = HidDeviceMock()
-        # read_data does one ACK-discard read, then N data reads.
+        # read_data drains a leading ACK echo for our cmd_byte (CMD_READ_PERKEY
+        # = 0xF5) and returns the N real data packets.
         dev.get_feature_report.side_effect = [
-            [0] * 65,  # ACK (discarded)
+            ack_packet(CMD_READ_PERKEY),
             *perkey_response_packets(varied_keys),
         ]
         parsed = read_perkey_live(device=as_hid_device(dev))
@@ -232,7 +235,7 @@ class TestReadPerkeyStored:
         START first; verify it's called once before the read."""
         dev = HidDeviceMock()
         dev.get_feature_report.side_effect = [
-            [0] * 65,  # ACK
+            ack_packet(CMD_READ_STORED),
             *perkey_response_packets(varied_keys),
         ]
         parsed = read_perkey_stored(device=as_hid_device(dev))

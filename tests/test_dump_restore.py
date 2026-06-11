@@ -35,7 +35,19 @@ def _mock_device() -> HidDeviceMock:
     light_data[10] = 0x05  # brightness
     light_data[11] = 0x03  # speed
 
-    dev.get_feature_report.side_effect = [id_ack, id_data, light_ack, light_data]
+    # Each read path is ack -> data -> session_save GET -> session_end GET.
+    # The two trailing handshake reads flush the firmware state machine so a
+    # follow-up read on the same handle returns fresh bytes.
+    dev.get_feature_report.side_effect = [
+        id_ack,
+        id_data,
+        [0x00] * 65,
+        [0x00] * 65,
+        light_ack,
+        light_data,
+        [0x00] * 65,
+        [0x00] * 65,
+    ]
     return dev
 
 

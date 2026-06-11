@@ -179,6 +179,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `hid.read_data` classified packets by position (first read = ACK,
+  remaining N = data), so any time stale state sat on the kernel queue
+  — common after a state-changing command (light / sleep / time) — the
+  caller picked up the echo-of-request bytes instead of real data.
+  Symptoms: `ak820ctl info` returning "v0.01" on the second call against
+  the same handle, every probe-after-mutation response coming back as
+  `[0x04, <cmd>, ...]`. Now classifies by packet shape: drains feature
+  reports matching `[REPORT_ID, cmd_byte, 0x00, *, 0x00, 0x00, 0x00, 0x00, ...]`
+  as ACK echoes (bounded by `MAX_ACK_DRAINS`) and returns everything
+  else as data. `commands.get_device_info` and `commands.read_lighting`
+  now also issue `session_save` + `session_end` after the read to flush
+  the firmware state machine so the *next* read on the same handle gets
+  fresh bytes. All callers (`get_device_info`, `read_lighting`,
+  `read_perkey_live`, `read_perkey_stored`, `read_keymap`, `probe_one`)
+  updated to pass `cmd_byte` through. Hardware-verified: three back-to-back
+  `get_device_info` calls on the same handle all report v1.14; a
+  mutate-then-`read_lighting` round-trip on the same handle reflects
+  the mutation accurately.
 - `commands.get_device_info` firmware-version decoder formatted the
   minor byte as decimal (`:02d`), so byte `0x14` came out as "20" and
   V1.14 firmware reported as "v1.20". Changed to hex format (`:02x`)
