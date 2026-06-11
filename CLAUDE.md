@@ -204,6 +204,15 @@ here — flag them when relevant, don't silently implement during unrelated work
 - **VIA-mode dual identity.** AK820 Pro also ships VID `0x3151` / PID `0x4021` running
   standard `id_dynamic_keymap_*` over report ID `0x04`. Mode-switch mechanism still unknown
   — see `docs/PROTOCOL.md` §VIA-mode variant.
+- **LCD partial-frame status bar.** V1.14 firmware accepts `CMD_IMAGE` with
+  `n_chunks=1` and a 4096-byte payload (256-byte header + 3840 bytes of pixel
+  data ≈ top 15 rows of the 128-wide LCD), leaving the rest of the frame
+  buffer untouched from the previous full upload. Each partial upload takes
+  ~500ms wall-clock at default `DISPLAY_ACK_TIMEOUT_MS=300`. Feature shape:
+  `ak820ctl status-bar TEXT_OR_IMAGE [--rows N] [--bg-image FILE]` — composes
+  a partial frame on top of a known background image. Useful for progress
+  bars, build/CI status, calendar pop, etc. Verified live; not exposed yet.
+  See `scratch_single_chunk.py` for the working experiment.
 
 ## Conventions
 

@@ -40,7 +40,7 @@ from ak820ctl.hid import (
     send_report,
     session_end,
 )
-from ak820ctl.keymap import KEYMAP_BYTES, read_keymap
+from ak820ctl.keymap import KEYMAP_BYTES, NUM_KEYMAP_CHUNKS, read_keymap
 from ak820ctl.keys import KEY_INDEX, Key
 from ak820ctl.models import KeyboardDump, KeyColor, ThemeSource
 from ak820ctl.perkey import NUM_KEYS, read_perkey_live, read_perkey_stored, write_perkey
@@ -520,18 +520,29 @@ PROBE_DESTRUCTIVE_CMDS: dict[int, str] = {
 
 PROBE_HEX_PREVIEW_BYTES = 32  # first N bytes of each response shown inline
 
+# Packet-count argument the firmware expects in CMD byte[9] for each
+# read opcode, and the matching number of response packets to read back.
+# Documented opcodes use what the production read paths use; the rest
+# default to PROBE_DEFAULT_COUNT (1).
+PROBE_DEFAULT_COUNT = 1
+PROBE_COUNTS: dict[int, int] = {
+    0x05: 1,  # CMD_READ_ID — single-packet device info
+    0x12: 1,  # CMD_READ_LIGHTING — single-packet lighting config
+    0x14: 48,  # 48-chunk read per docs/unknown-commands.md (vendor tool never sends)
+    0x15: NUM_KEYMAP_CHUNKS,  # CMD_READ_KEYMAP — 49 x 64 B
+}
 
-def _probe_one(cmd_byte: int) -> list[list[int]]:
+
+def probe_one(cmd_byte: int) -> list[list[int]]:
     """Send one safe read command and collect the response packets."""
+    count = PROBE_COUNTS.get(cmd_byte, PROBE_DEFAULT_COUNT)
     device = open_device()
     try:
-        # Single-packet read pattern (count=9 in the request matches the
-        # perkey/keymap reads — firmware caps at its own buffer size).
         send_report(
             device,
-            make_packet(REPORT_ID, cmd_byte, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09),
+            make_packet(REPORT_ID, cmd_byte, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, count),
         )
-        packets = read_data(device, count=9)
+        packets = read_data(device, count=count)
         # End the session so a subsequent probe isn't dropped silently.
         session_end(device)
     finally:
@@ -623,7 +634,7 @@ def probe(
 
     for cmd_byte in targets:
         try:
-            packets = _probe_one(cmd_byte)
+            packets = probe_one(cmd_byte)
         except RuntimeError as e:
             console.print(f"[red]CMD 0x{cmd_byte:02x} failed:[/] {e}")
             continue

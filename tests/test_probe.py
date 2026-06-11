@@ -8,10 +8,13 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 from ak820ctl.cli import (
+    PROBE_COUNTS,
+    PROBE_DEFAULT_COUNT,
     PROBE_DESTRUCTIVE_CMDS,
     PROBE_SAFE_CMDS,
     app,
     format_probe_summary,
+    probe_one,
     write_probe_response,
 )
 from tests.conftest import HidDeviceMock, as_hid_device
@@ -139,3 +142,52 @@ class TestProbeOutputFormatting:
         assert len(contents) == 128
         assert contents[:64] == bytes(range(64))
         assert contents[64:] == b"\xaa" * 64
+
+
+class TestProbeCounts:
+    """Per-CMD packet count: probe_one sends count=PROBE_COUNTS[cmd] in the
+    request packet AND asks read_data for that many packets back."""
+
+    @patch("ak820ctl.cli.open_device")
+    @patch("ak820ctl.cli.session_end")
+    @patch("ak820ctl.cli.read_data")
+    @patch("ak820ctl.cli.send_report")
+    def test_known_cmd_uses_documented_count(
+        self,
+        mock_send: MagicMock,
+        mock_read: MagicMock,
+        _mock_end: MagicMock,
+        mock_open: MagicMock,
+    ) -> None:
+        dev = HidDeviceMock()
+        mock_open.return_value = as_hid_device(dev)
+        mock_read.return_value = []
+        # CMD 0x15 (read_keymap) is documented as NUM_KEYMAP_CHUNKS (49).
+        _ = probe_one(0x15)
+        sent_packet = mock_send.call_args.args[1]
+        # send_report is called with (device, packet_bytes); packet[8] holds count
+        # because make_packet fills positions 0..8 from the 9 positional args
+        # (REPORT_ID, cmd_byte, 6x 0x00, count).
+        assert sent_packet[8] == PROBE_COUNTS[0x15]
+        # read_data called with count=49 too.
+        assert mock_read.call_args.kwargs["count"] == PROBE_COUNTS[0x15]
+
+    @patch("ak820ctl.cli.open_device")
+    @patch("ak820ctl.cli.session_end")
+    @patch("ak820ctl.cli.read_data")
+    @patch("ak820ctl.cli.send_report")
+    def test_unknown_cmd_defaults_to_one(
+        self,
+        mock_send: MagicMock,
+        mock_read: MagicMock,
+        _mock_end: MagicMock,
+        mock_open: MagicMock,
+    ) -> None:
+        dev = HidDeviceMock()
+        mock_open.return_value = as_hid_device(dev)
+        mock_read.return_value = []
+        # 0x10 / 0x16 / 0x26 / 0xE0 aren't in PROBE_COUNTS, default to 1.
+        _ = probe_one(0x10)
+        sent_packet = mock_send.call_args.args[1]
+        assert sent_packet[8] == PROBE_DEFAULT_COUNT == 1
+        assert mock_read.call_args.kwargs["count"] == PROBE_DEFAULT_COUNT
