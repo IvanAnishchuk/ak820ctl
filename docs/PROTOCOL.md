@@ -166,8 +166,22 @@ This is how the clock on the LCD display gets set.
 - **Total data:** 32,768 bytes
 - **Transfer interface:** Interface 2 (Usage Page `0xFF68`)
 - **Chunk size on the wire:** 4,**123** bytes per chunk (4096 payload + 27-byte
-  trailer). Each chunk is split into 64-byte interrupt writes; the trailer
-  creates a short final packet that signals the chunk boundary.
+  trailer) is the canonical claim — vendored from sibling-project docs and
+  echoed by `epomaker-ak820-pro` / `ajazz-keyboard-linux-cpp`. Each chunk would
+  be split into 64-byte interrupt writes; the trailer would create a short final
+  packet that signals the chunk boundary.
+
+  > **Empirically unconfirmed on V1.14 firmware.** ak820ctl tried the
+  > 4123-byte form against a live AK820 Pro running bcdDevice V1.14 and
+  > every render came out garbled (both `image` and `gif` paths, every
+  > retry). What actually works on V1.14 is **4,097 bytes on the wire**:
+  > the hidapi 0x00 report-ID prefix plus a 4,096-byte payload, with the
+  > trailing 1-byte short-packet acting as the chunk-boundary delimiter
+  > the firmware checks. See `src/ak820ctl/display.py::upload_image`. The
+  > 4123-byte canonical claim may be correct for earlier firmwares
+  > (the analysed Windows-driver blob is V1.13) or may be a
+  > misinterpretation; revisit when a different firmware version is
+  > available.
 - **Chunks:** 9 total
 - **Header:** 256-byte GIF header prepended (frame count, timing)
 - **Animation:** Up to 141 frames supported

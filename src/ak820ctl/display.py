@@ -11,7 +11,7 @@ from PIL import Image
 
 from ak820ctl.hid import (
     DISPLAY_ACK_TIMEOUT_MS,
-    DISPLAY_CHUNK_SIZE,
+    DISPLAY_PAYLOAD_SIZE,
     FW_DELAY,
     REPORT_ID,
     make_packet,
@@ -161,7 +161,7 @@ def upload_image(
         raise ValueError(msg)
 
     total = len(data)
-    n_chunks = math.ceil(total / DISPLAY_CHUNK_SIZE)
+    n_chunks = math.ceil(total / DISPLAY_PAYLOAD_SIZE)
 
     own_cmd = cmd_device is None
     own_disp = disp_device is None
@@ -180,23 +180,31 @@ def upload_image(
         image_cmd = make_packet(REPORT_ID, CMD_IMAGE, slot, 0, 0, 0, 0, 0, chunk_lo, chunk_hi)
         send_command(cmd_device, image_cmd)
 
-        # Step 3: Send data chunks on Interface 2 via output reports
+        # Step 3: Send data chunks on Interface 2 via output reports.
+        #
+        # Wire format: 4097 bytes total — hidapi 0x00 report-ID prefix +
+        # 4096-byte RGB565 payload. The trailing 1-byte short-packet acts
+        # as the chunk-boundary delimiter the firmware actually checks.
+        #
+        # docs/PROTOCOL.md §LCD documents a canonical 4123-byte form
+        # (4096 payload + 27-byte 0xFF trailer) used by other drivers
+        # (epomaker-ak820-pro, ajazz-keyboard-linux-cpp). Plan2.md Tier D
+        # tried that form against firmware V1.14 with live verification
+        # and every render came out garbled (every retry, both `image`
+        # and `gif` paths), while the 4097-byte short-packet form works
+        # reliably. So either the canonical doc is wrong, the trailer is
+        # firmware-version-specific (other reports may be from earlier
+        # firmwares), or we're misinterpreting it. Trailer constants are
+        # commented out in hid.py — revisit and uncomment + flip this
+        # loop if a different firmware turns up.
         for i in range(n_chunks):
-            offset = i * DISPLAY_CHUNK_SIZE
-            chunk = data[offset : offset + DISPLAY_CHUNK_SIZE]
+            offset = i * DISPLAY_PAYLOAD_SIZE
+            chunk = data[offset : offset + DISPLAY_PAYLOAD_SIZE]
 
-            # Pad last chunk with zeros if needed
-            if len(chunk) < DISPLAY_CHUNK_SIZE:
-                chunk = chunk + b"\x00" * (DISPLAY_CHUNK_SIZE - len(chunk))
+            # Pad last chunk with zeros if needed.
+            if len(chunk) < DISPLAY_PAYLOAD_SIZE:
+                chunk = chunk + b"\x00" * (DISPLAY_PAYLOAD_SIZE - len(chunk))
 
-            # Output report on Interface 2: hidapi report-ID prefix 0x00 +
-            # 4096-byte payload. Canonical drivers (epomaker-ak820-pro,
-            # ajazz-keyboard-linux-cpp) frame this as 4123 wire bytes by
-            # appending a 27-byte 0xFF trailer — we send 4097 (4096 + ID
-            # byte) and rely on the trailing short-packet boundary, which
-            # is what the firmware actually checks. See docs/PROTOCOL.md
-            # §LCD for the canonical format; Tier D of plan2.md tracks
-            # aligning with it.
             report = b"\x00" + chunk
             _ = disp_device.write(report)
             _read_display_ack(disp_device)

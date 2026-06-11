@@ -122,7 +122,7 @@ def test_get_device_info_parses_response() -> None:
     # send_report does one send, read_data discards ACK then reads data.
     mock_device.get_feature_report.side_effect = [
         ack_packet(0x05),
-        device_info_packet(vid=0x0C45, pid=0x8009, fw_major=1, fw_minor=20, capabilities=0x3040),
+        device_info_packet(vid=0x0C45, pid=0x8009, fw_major=1, fw_minor=0x14, capabilities=0x3040),
     ]
 
     with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
@@ -130,7 +130,7 @@ def test_get_device_info_parses_response() -> None:
 
     assert info.vid == 0x0C45
     assert info.pid == 0x8009
-    assert info.firmware == "1.20"
+    assert info.firmware == "1.14"
     assert info.capabilities == 0x3040
     mock_device.close.assert_not_called()
 
@@ -160,13 +160,13 @@ def test_get_firmware_version_delegates() -> None:
     mock_device = HidDeviceMock()
     mock_device.get_feature_report.side_effect = [
         ack_packet(0x05),
-        device_info_packet(fw_major=1, fw_minor=20),
+        device_info_packet(fw_major=1, fw_minor=0x14),
     ]
 
     with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
         ver = get_firmware_version(device=as_hid_device(mock_device))
 
-    assert ver == "1.20"
+    assert ver == "1.14"
 
 
 def test_read_lighting_parses_response() -> None:
@@ -299,7 +299,7 @@ def _device_info_responder(mock_device: HidDeviceMock) -> None:
     light_data[1] = 0x01  # static
     mock_device.get_feature_report.side_effect = [
         ack_packet(0x05),
-        device_info_packet(vid=0x0C45, pid=0x8009, fw_major=1, fw_minor=20),
+        device_info_packet(vid=0x0C45, pid=0x8009, fw_major=1, fw_minor=0x14),
         ack_packet(0x12),
         light_data,
     ]
@@ -310,7 +310,7 @@ def test_dump_settings_opens_and_closes_device() -> None:
     _device_info_responder(mock_device)
     with patch("ak820ctl.commands.open_device", return_value=as_hid_device(mock_device)):
         dump = dump_settings()
-    assert dump.device.firmware == "1.20"
+    assert dump.device.firmware == "1.14"
     assert dump.lighting.mode == "static"
     mock_device.close.assert_called_once()
 
@@ -318,7 +318,7 @@ def test_dump_settings_opens_and_closes_device() -> None:
 def test_restore_settings_returns_actions_lighting_and_time() -> None:
     mock_device = HidDeviceMock()
     dump = KeyboardDump(
-        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.14"),
         lighting=LightingConfig(mode="breath", r=0xFF, brightness=3),
     )
     actions = restore_settings(dump, device=as_hid_device(mock_device), skip_time=False)

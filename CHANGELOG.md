@@ -116,8 +116,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   why their device enumerates without matching `0x0C45/0x8009`.
 - `display.upload_image` stale comment "Output report: report ID 0x00
   + 4096 bytes data" rewritten to explain the wire-format relationship
-  to the canonical 4123-byte chunk (see docs/PROTOCOL.md §LCD and
-  plan2.md Tier D).
+  to the canonical 4123-byte chunk and to record that the canonical
+  form was tried live on V1.14 firmware and produced garbled output
+  (every retry, both `image` and `gif` paths). The 4097-byte
+  short-packet form is what we actually send; the trailer constants
+  in `hid.py` (`DISPLAY_TRAILER_SIZE` / `DISPLAY_CHUNK_WIRE_SIZE`)
+  are commented out as future-debugging breadcrumbs.
 - `types-Pillow` added as a dev dependency; the
   `# pyright: ignore[reportUnknownMemberType]` and explanatory comment
   on `display.frame_to_rgb565` are removed (Pillow's stubs cover
@@ -129,7 +133,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   future drift).
 - Vendored docs (`docs/PROTOCOL.md`, `docs/FIRMWARE-HACKING.md`,
   `docs/RESEARCH.md`) re-synced from the canonical
-  `ak820-experiments/` umbrella files (LCD chunk size 4123, new CMDs
+  `ak820-experiments/` umbrella files (canonical LCD chunk size 4123,
+  which we later debunked on V1.14 — see the `display.upload_image`
+  note above; new CMDs
   `0x05`/`0x11`/`0x15`/`0x20`/`0x27`, `0x13 SET_LIGHTING` flash
   persistence at `0x9800`, VIA-mode dual-identity variant, two-dispatch
   firmware architecture, flash region map, 8-blob firmware family
@@ -173,6 +179,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `commands.get_device_info` firmware-version decoder formatted the
+  minor byte as decimal (`:02d`), so byte `0x14` came out as "20" and
+  V1.14 firmware reported as "v1.20". Changed to hex format (`:02x`)
+  to match the BCD-style convention USB `bcdDevice` uses (0x14 → "14").
+  `ak820ctl info` now correctly reports v1.14 on the test device,
+  matching `lsusb`. Test fixtures and assertions updated; the helper
+  `device_info_packet`'s `fw_minor` default flipped from `20` to
+  `0x14` to reduce reader confusion.
 - `docs/PROTOCOL.md` "Firmware Version Query" section was preserved
   verbatim from a stale revision of the canonical umbrella — claimed
   CMD `0x01` returns a `major.minor.patch` triple at bytes 2-4. Now

@@ -16,8 +16,22 @@ FW_DELAY = 0.035  # 35ms mandatory inter-command delay
 
 # Display data channel (Interface 2)
 DISPLAY_USAGE_PAGE = 0xFF68
-DISPLAY_CHUNK_SIZE = 4096
+DISPLAY_PAYLOAD_SIZE = 4096  # RGB565 data per chunk — what works on V1.14
 DISPLAY_ACK_TIMEOUT_MS = 300
+
+# Back-compat alias: cli.py reports `--max-chunk` against the payload size,
+# not the wire size. Will be removed in a future release.
+DISPLAY_CHUNK_SIZE = DISPLAY_PAYLOAD_SIZE
+
+# Canonical 4123-byte chunk form (4096 payload + 27-byte 0xFF trailer)
+# from docs/PROTOCOL.md §LCD Image Upload + sibling impls
+# (epomaker-ak820-pro, ajazz-keyboard-linux-cpp). Tried live on V1.14
+# firmware: every render came out garbled. Left commented for the next
+# round if a different firmware turns up — uncomment + flip the chunk
+# loop in display.py to test again.
+# DISPLAY_TRAILER_SIZE = 27  # noqa: ERA001
+# DISPLAY_TRAILER_BYTE = 0xFF  # noqa: ERA001
+# DISPLAY_CHUNK_WIRE_SIZE = DISPLAY_PAYLOAD_SIZE + DISPLAY_TRAILER_SIZE  # 4123  # noqa: ERA001
 
 # Session-control opcodes (issued by session_start/save/end below).
 CMD_START = 0x18

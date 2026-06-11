@@ -44,7 +44,7 @@ def test_dump_settings() -> None:
     data = dump_settings(device=as_hid_device(dev))
 
     assert isinstance(data, KeyboardDump)
-    assert data.device.firmware == "1.20"
+    assert data.device.firmware == "1.14"
     assert data.device.vid == 0x0C45
     assert data.lighting.mode == "static"
     assert data.lighting.r == 0xFF
@@ -52,7 +52,7 @@ def test_dump_settings() -> None:
 
 def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     dump = KeyboardDump(
-        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.20"),
+        device=DeviceInfo(vid=0x0C45, pid=0x8009, firmware="1.14"),
         lighting=LightingConfig(
             mode="breath",
             r=0,

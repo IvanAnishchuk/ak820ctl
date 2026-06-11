@@ -11,7 +11,7 @@
 | Is `cmd_0x14` the keymap write? | **No** — it's a 48-chunk *read*. The Windows tool never sends it. |
 | Do "stub" CMDs (`0x10/0x11/0x14/0x15/0x16/0x26`) actually work? | Yes, they're real reads of default-zero RAM buffers. The "stub" interpretation in the prior session was a misread; see [`firmware-analysis-helpers.md`](firmware-analysis-helpers.md). |
 | Does V1.13 differ from RS2 V1.28? | Yes, but only `cmd_0x11` (V1.13: writes flash `0x9400`; V1.28: no-op) and `cmd_0x19` (V1.13: BT-flag set; V1.28: absent). All 8 family blobs share the same command set otherwise. |
-| Are LCD chunks 4096 or 4123 bytes? | **4123** on the wire (4096 payload + 27 B trailer). |
+| Are LCD chunks 4096 or 4123 bytes? | Canonical answer: **4123** on the wire (4096 payload + 27 B trailer). ⚠ Empirically **wrong on V1.14 firmware**: ak820ctl tested the 4123-byte form against a live AK820 Pro V1.14 and every render came out garbled (both `image` and `gif` paths). What works on V1.14 is **4097 bytes** — hidapi report-ID prefix + 4096-byte payload, with the trailing short-packet acting as the chunk delimiter. See [`PROTOCOL.md`](PROTOCOL.md) §LCD Image Upload. |
 
 ## Hardware Overview
 
