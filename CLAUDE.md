@@ -213,6 +213,19 @@ here — flag them when relevant, don't silently implement during unrelated work
   a partial frame on top of a known background image. Useful for progress
   bars, build/CI status, calendar pop, etc. Verified live; not exposed yet.
   See `scratch_single_chunk.py` for the working experiment.
+- **`read_data` ACK-ordering robustness.** `hid.read_data` discards the first
+  feature-report packet as ACK and treats the next N as data. The wire format
+  doesn't cleanly distinguish ACK echoes (which start with `[0x04, <cmd>, …]`)
+  from data, so when there's any stale state on the kernel queue — common
+  after a state-changing command (light/sleep/time) — the offset is wrong and
+  callers read echo-of-request instead of data. Symptoms: `info` reporting
+  "v0.01" on the second call; the probe-after-mutation experiment
+  (`scratch_probe_after_mutation.py`) producing only echo bytes regardless of
+  whether lighting actually changed. Future fix: classify packets by shape
+  (`packet[1] == REPORT_ID && packet[2] == cmd_byte ⇒ ACK echo, otherwise
+  data`) and drain ACKs until a data packet appears, or open a fresh handle
+  per multi-step probe. Until this lands, probing is only reliable for the
+  first command issued against a freshly-opened device.
 
 ## Conventions
 
