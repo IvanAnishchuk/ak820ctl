@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `scripts/demo_all.sh`: end-to-end hardware demo walking the full CLI
+  surface (`info`, `time`, `sleep`, global `light` modes, custom per-key
+  LED themes via `theme-compile | perkey --load`, and LCD `image`/`gif`
+  upload). Snapshots lighting + per-key state up front and restores it on
+  exit (EXIT trap). Tunable via `PAUSE` / `BACKUP_DIR` env vars. A
+  first-class `demo` subcommand is tracked in #61.
 - `probe` subcommand: send safe read-only CMDs and print response
   shapes. `--cmd HEX` runs a single opcode against the whitelist
   (0x05 / 0x10 / 0x12 / 0x14 / 0x15 / 0x16 / 0x26 / 0xE0);
