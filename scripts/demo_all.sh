@@ -15,15 +15,21 @@
 # Environment:
 #     PAUSE       seconds to wait between visible steps (default 4)
 #     BACKUP_DIR  directory for the state snapshots (default: a mktemp dir)
+#     SLOT        LCD slot to overwrite (default 1)
 #
-# NOTE: the LCD cannot be reset to the firmware clock screen
-# programmatically -- press the keyboard's wheel button to restore it
-# after the demo.
+# WHAT IS *NOT* RESTORED -- the protocol can only write these, not read
+# them, so the demo cannot back them up or put them back:
+#   - Sleep timer: left at `never`. If you had a non-default timeout,
+#     re-set it afterwards with `ak820ctl sleep <value>`.
+#   - LCD slot $SLOT: overwritten and unrecoverable. Press the keyboard's
+#     wheel button for the firmware clock screen, or re-upload your own
+#     image with `ak820ctl image <file> --slot $SLOT`.
 
 set -euo pipefail
 
 PAUSE="${PAUSE:-4}"
 BACKUP_DIR="${BACKUP_DIR:-$(mktemp -d -t ak820-demo.XXXXXX)}"
+SLOT="${SLOT:-1}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 THEMES="$REPO_ROOT/src/ak820ctl/data/themes"
 LAYOUTS="$REPO_ROOT/src/ak820ctl/data/layouts"
@@ -37,7 +43,11 @@ restore() {
     ak perkey --load "$BACKUP_DIR/backup-perkey.json" || true
     ak restore "$BACKUP_DIR/backup-state.json" || true
     printf 'Backups kept in: %s\n' "$BACKUP_DIR"
-    printf 'NOTE: press the wheel button to restore the LCD clock screen.\n'
+    printf '\n'
+    printf 'NOT auto-restored (protocol has no read-back for these):\n'
+    printf '  - Sleep timer left at never -- re-set if needed with: ak820ctl sleep <value>\n'
+    printf '  - LCD slot %s overwritten -- press the wheel button, or: ak820ctl image <file> --slot %s\n' \
+        "$SLOT" "$SLOT"
 }
 
 # --- preflight + backup ----------------------------------------------------
@@ -53,7 +63,9 @@ trap restore EXIT
 step "Sync clock to system time"
 ak time
 
-step "Sleep timer: 5min, then never"
+# The original sleep timer can't be read back, so it can't be restored --
+# the demo leaves it at `never` and the exit note flags this.
+step "Sleep timer: 5min, then never (original value can't be restored)"
 ak sleep 5min
 sleep "$PAUSE"
 ak sleep never
@@ -101,11 +113,16 @@ ak perkey --all ff0000 -b 2
 sleep "$PAUSE"
 
 # --- LCD image + gif -------------------------------------------------------
-step "LCD: static image (bundled dracula smiley, resized to 128x128)"
-ak image "$EXAMPLES/lcd/groups-dracula.png" --slot 1
+# LCD content is write-only: slot $SLOT is overwritten and cannot be backed
+# up or restored. Point the demo at a different slot with the SLOT env var.
+printf '\n!!! LCD slot %s will be overwritten and CANNOT be restored.\n' "$SLOT"
+printf '    Set SLOT=<n> to target a different slot. Continuing in 3s...\n'
+sleep 3
+step "LCD: static image to slot $SLOT (bundled dracula smiley, resized to 128x128)"
+ak image "$EXAMPLES/lcd/groups-dracula.png" --slot "$SLOT"
 sleep "$PAUSE"
-step "LCD: animated GIF"
-ak gif "$EXAMPLES/lcd/animation.gif" --slot 1
+step "LCD: animated GIF to slot $SLOT"
+ak gif "$EXAMPLES/lcd/animation.gif" --slot "$SLOT"
 sleep "$PAUSE"
 
 # Original state is reapplied by the EXIT trap (restore).
