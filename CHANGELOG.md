@@ -224,3 +224,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Dependabot regen workflow trigger paths
 - `scripts/regen_requirements.py`: pass `--output-file` explicitly so the
   header matches CI (also covered by the meson alignment above)
+
+### Security
+
+- Bump the dev-only transitive `msgpack` 1.1.2 → 1.2.1 (via `cachecontrol`,
+  pulled in by `pip-audit`) to clear advisory GHSA-6v7p-g79w-8964. Runtime
+  deps are unaffected; this only touches the audit toolchain.
