@@ -1,3 +1,5 @@
+<!-- cadence: remember, handoff-guard, solo-pm -->
+
 # CLAUDE.md
 
 ## Project Overview
