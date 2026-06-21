@@ -173,7 +173,11 @@ uv run python scripts/demo_themes.py
   uploads the LCD image and writes the per-key colors with a 10s interval per theme.
 - `scripts/generate_smileys.py` — regenerates `examples/lcd/*.png` from the in-script theme
   expression table. Run after adding/changing a shipped theme.
-- `scripts/audit.py`, `scripts/regen_requirements.py` — supply-chain + lockfile maintenance.
+- `scripts/audit.py` — supply-chain audit; exports requirements from `uv.lock`
+  on the fly into a temp dir, then pip-audit + SBOM (prod and prod+dev).
+- `scripts/regen_requirements.py` — the single requirements exporter
+  (`--stdout` pipe / `--output-dir` files). `uv.lock` is the committed source of
+  truth; `requirements*.txt` are generated on demand, never committed.
 
 ## Protocol gotchas
 

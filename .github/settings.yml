@@ -74,7 +74,10 @@ branches:
       required_conversation_resolution: true
       required_signatures: true
       # Probot Settings requires `restrictions` to be present for branch
-      # protection to apply at all; null = no push restrictions (everyone).
+      # protection to apply at all. null = no push restrictions (everyone with
+      # write access). A non-null object ({users, teams, apps}) restricts who
+      # may push, but that form is ORG-only -- on personal-account repos the
+      # API rejects it, so null is the only valid value here.
       restrictions: null
 
 environments:

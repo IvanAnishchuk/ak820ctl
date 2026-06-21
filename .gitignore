@@ -23,6 +23,9 @@ pytest.log
 # All CI / build reports go here
 .reports/
 
+# Local handoff / cadence buffer (kept local, never committed)
+.remember/
+
 # Environment
 .env
 .env.local
