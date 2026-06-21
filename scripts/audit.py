@@ -8,6 +8,7 @@ Usage:
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -19,9 +20,17 @@ from rich.console import Console
 console = Console()
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPORTS_DIR = REPO_ROOT / ".reports" / "audit"
-REGEN_SCRIPT = REPO_ROOT / "scripts" / "regen_requirements.py"
 
 TOTAL_STEPS = 5
+
+# Load the sibling export helper in-process (scripts/ is not a package).
+_regen_spec = importlib.util.spec_from_file_location(
+    "regen_requirements", REPO_ROOT / "scripts" / "regen_requirements.py"
+)
+if _regen_spec is None or _regen_spec.loader is None:
+    raise ImportError(name="regen_requirements")
+regen = importlib.util.module_from_spec(_regen_spec)
+_regen_spec.loader.exec_module(regen)
 
 
 def step(n: int, msg: str) -> None:
@@ -52,15 +61,8 @@ def run_capture(cmd: list[str]) -> tuple[int, str]:
 def _export_requirements(tmpdir: Path, *, include_dev: bool) -> Path:
     """Export one requirements set from uv.lock into tmpdir, return its path."""
     name = "requirements-dev.txt" if include_dev else "requirements.txt"
-    cmd = [sys.executable, str(REGEN_SCRIPT), "--stdout"]
-    if include_dev:
-        cmd.append("--include-dev")
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT, check=False)
-    if result.returncode != 0:
-        console.print(result.stderr)
-        fail(f"Failed to export {name} from uv.lock")
     dest = tmpdir / name
-    dest.write_text(result.stdout, encoding="utf-8")
+    dest.write_text(regen.export(include_dev=include_dev), encoding="utf-8")
     return dest
 
 

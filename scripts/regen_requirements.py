@@ -57,6 +57,8 @@ def main(argv: list[str] | None = None) -> None:
         "--include-dev", action="store_true", help="(stdout mode) include dev dependencies"
     )
     args = parser.parse_args(argv)
+    if args.include_dev and not args.stdout:
+        parser.error("--include-dev only applies in --stdout mode")
 
     if args.stdout:
         sys.stdout.write(export(include_dev=args.include_dev))

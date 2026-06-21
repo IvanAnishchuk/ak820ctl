@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location(
     "regen_requirements", REPO_ROOT / "scripts" / "regen_requirements.py"
@@ -45,3 +47,8 @@ def test_stdout_include_dev(capsys):
     regen.main(["--stdout", "--include-dev"])
     out = capsys.readouterr().out
     assert "\npytest==" in out
+
+
+def test_include_dev_without_stdout_errors():
+    with pytest.raises(SystemExit):
+        regen.main(["--include-dev"])
