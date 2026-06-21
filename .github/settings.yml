@@ -8,14 +8,15 @@ repository:
   has_wiki: false
   has_downloads: true
   default_branch: main
-  allow_squash_merge: true
-  allow_merge_commit: false
-  allow_rebase_merge: true
+  # Merge commits are the default for my projects (preserve commit history);
+  # squash is disabled. Flip these per-project if a repo needs a different
+  # policy.
+  allow_squash_merge: false
+  allow_merge_commit: true
+  allow_rebase_merge: false
   allow_auto_merge: true
   delete_branch_on_merge: true
   allow_update_branch: true
-  squash_merge_commit_title: PR_TITLE
-  squash_merge_commit_message: PR_BODY
 
   security_and_analysis:
     secret_scanning:
@@ -72,6 +73,9 @@ branches:
       allow_deletions: false
       required_conversation_resolution: true
       required_signatures: true
+      # Probot Settings requires `restrictions` to be present for branch
+      # protection to apply at all; null = no push restrictions (everyone).
+      restrictions: null
 
 environments:
   - name: pypi
