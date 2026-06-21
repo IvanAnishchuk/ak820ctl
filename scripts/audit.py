@@ -8,10 +8,11 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from rich.console import Console
@@ -20,10 +21,16 @@ console = Console()
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPORTS_DIR = REPO_ROOT / ".reports" / "audit"
 
-PROD_REQ = REPO_ROOT / "requirements.txt"
-DEV_REQ = REPO_ROOT / "requirements-dev.txt"
+TOTAL_STEPS = 5
 
-TOTAL_STEPS = 6
+# Load the sibling export helper in-process (scripts/ is not a package).
+_regen_spec = importlib.util.spec_from_file_location(
+    "regen_requirements", REPO_ROOT / "scripts" / "regen_requirements.py"
+)
+if _regen_spec is None or _regen_spec.loader is None:
+    raise ImportError(name="regen_requirements")
+regen = importlib.util.module_from_spec(_regen_spec)
+_regen_spec.loader.exec_module(regen)
 
 
 def step(n: int, msg: str) -> None:
@@ -35,19 +42,9 @@ def ok(msg: str) -> None:
     console.print(f"   [bold green]ok[/] {msg}")
 
 
-def warn(msg: str) -> None:
-    console.print(f"   [bold yellow]!![/] {msg}")
-
-
 def fail(msg: str) -> None:
     console.print(f"   [bold red]FAIL[/] {msg}")
     sys.exit(1)
-
-
-def file_sha256(path: Path) -> str:
-    if not path.exists():
-        return ""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def run_capture(cmd: list[str]) -> tuple[int, str]:
@@ -59,6 +56,14 @@ def run_capture(cmd: list[str]) -> tuple[int, str]:
         check=False,
     )
     return result.returncode, (result.stdout or "") + (result.stderr or "")
+
+
+def _export_requirements(tmpdir: Path, *, include_dev: bool) -> Path:
+    """Export one requirements set from uv.lock into tmpdir, return its path."""
+    name = "requirements-dev.txt" if include_dev else "requirements.txt"
+    dest = tmpdir / name
+    dest.write_text(regen.export(include_dev=include_dev), encoding="utf-8")
+    return dest
 
 
 def load_sbom_components(path: Path) -> int:
@@ -73,29 +78,7 @@ def _check_lockfile() -> None:
         ok("uv.lock is up to date")
     else:
         console.print(out)
-        fail("uv.lock is out of date -- run: uv run python scripts/regen_requirements.py")
-
-
-def _check_requirements() -> None:
-    step(2, "requirements*.txt in sync with uv.lock")
-    prod_before = file_sha256(PROD_REQ)
-    dev_before = file_sha256(DEV_REQ)
-    code, out = run_capture([sys.executable, str(REPO_ROOT / "scripts" / "regen_requirements.py")])
-    if code != 0:
-        console.print(out)
-        fail("Failed to regenerate requirements files")
-    prod_after = file_sha256(PROD_REQ)
-    dev_after = file_sha256(DEV_REQ)
-    stale = False
-    if prod_before != prod_after:
-        warn(f"requirements.txt was stale ({prod_before[:12]} -> {prod_after[:12]})")
-        stale = True
-    if dev_before != dev_after:
-        warn(f"requirements-dev.txt was stale ({dev_before[:12]} -> {dev_after[:12]})")
-        stale = True
-    if stale:
-        fail("Files were regenerated. Review and commit them.")
-    ok("requirements.txt and requirements-dev.txt are current")
+        fail("uv.lock is out of date -- run: uv lock")
 
 
 VULN_IGNORE_FILE = REPO_ROOT / ".pip-audit-ignore"
@@ -151,11 +134,14 @@ def main() -> int:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     _check_lockfile()
-    _check_requirements()
-    _audit_deps(3, "prod", PROD_REQ, REPORTS_DIR / "pip-audit.log")
-    _audit_deps(4, "prod + dev", DEV_REQ, REPORTS_DIR / "pip-audit-dev.log")
-    _generate_sbom(5, "prod", PROD_REQ, REPORTS_DIR / "sbom.cdx.json")
-    _generate_sbom(6, "prod + dev", DEV_REQ, REPORTS_DIR / "sbom-dev.cdx.json")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        prod_req = _export_requirements(tmp, include_dev=False)
+        dev_req = _export_requirements(tmp, include_dev=True)
+        _audit_deps(2, "prod", prod_req, REPORTS_DIR / "pip-audit.log")
+        _audit_deps(3, "prod + dev", dev_req, REPORTS_DIR / "pip-audit-dev.log")
+        _generate_sbom(4, "prod", prod_req, REPORTS_DIR / "sbom.cdx.json")
+        _generate_sbom(5, "prod + dev", dev_req, REPORTS_DIR / "sbom-dev.cdx.json")
 
     console.print()
     console.print("[bold green]All audits passed.[/]")

@@ -19,7 +19,7 @@
 #   uv run ninja -C builddir mypy-paranoid.txt      # Type check: mypy strict + every --disallow-any-* flag (allowed to fail)
 #   uv run ninja -C builddir diff-cover-mypy.json   # PR type-precision gating from mypy-strict-cobertura/cobertura.xml
 #   uv run ninja -C builddir pyright-recommended.txt # Type check: basedpyright
-#   uv run ninja -C builddir requirements           # Lock export + SBOM
+#   uv run ninja -C builddir requirements.txt requirements-dev.txt  # Export requirements (build artifacts)
 #
 # Mutation testing:
 #   uv run ninja -C builddir mutmut                 # Run mutmut
@@ -351,14 +351,11 @@ custom_target(
   ],
   command: [
     bash, '-c',
-    # Run from build_root with a relative --output-file so the command-line
-    # uv embeds in the header matches scripts/regen_requirements.py and the
-    # dependabot-regen workflow byte-for-byte (absolute paths and stdout
-    # redirection both produce different headers). uv walks up to find
-    # pyproject.toml in src_root.
-    '''cd @1@
-uv export --format requirements-txt --no-emit-project --no-dev --output-file requirements.txt
-uv export --format requirements-txt --no-emit-project          --output-file requirements-dev.txt
+    # Generate via the single export helper (scripts/regen_requirements.py).
+    # Run from src_root so uv finds pyproject.toml; write the declared outputs
+    # into build_root. Requirements are build artifacts here, never committed.
+    '''cd @0@
+uv run python scripts/regen_requirements.py --output-dir @1@
 echo "Exported requirements to @1@/"
 '''.format(src_root, build_root),
   ],

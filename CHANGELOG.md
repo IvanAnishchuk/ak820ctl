@@ -172,13 +172,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   reason (stateless RGB565 pixel encoder, tested externally)
 - `perkey --key INDEX:RRGGBB` validates all specs before reading device
   state, so a malformed spec fails fast without making a device round-trip
-- meson `requirements` ninja target uses `--output-file <relative>` so
-  the embedded `uv export` header matches `scripts/regen_requirements.py`
-  and `.github/workflows/dependabot-regen.yml` byte-for-byte
 - `info` command: use CMD 0x05 for full device ID with LE uint16 firmware version (shows V1.20)
+- `scripts/regen_requirements.py` is now the single requirements exporter,
+  with `--stdout` (pipe) and `--output-dir` (files) modes; the meson
+  `requirements` target and `release.yml` both call it instead of inlining
+  `uv export`.
+- `scripts/audit.py` generates requirements ephemerally from `uv.lock` (a temp
+  dir) instead of reading committed files; still audits prod and prod+dev
+  separately. The release SBOM is now prod-only.
+- `.github/settings.yml`: default to merge commits (squash and rebase disabled)
+  to match the never-squash policy; per-project overridable.
+- Dev tooling bumped (ruff, pytest, pip-audit, meson-python, basedpyright),
+  superseding Dependabot PR #59.
+
+### Removed
+
+- Committed `requirements.txt` / `requirements-dev.txt` — `uv.lock` is the
+  single source of truth; requirements are generated on demand.
+- `.github/workflows/dependabot-regen.yml` — its `GITHUB_TOKEN` push never
+  re-triggered CI, so regenerated requirements could land unaudited.
+- The `regen-requirements` pre-commit hook (no committed files left to sync).
 
 ### Fixed
 
+- `.github/settings.yml`: add `restrictions: null` so the Probot Settings app
+  applies the scaffolded branch protection (it silently no-ops without it).
 - `hid.read_data` classified packets by position (first read = ACK,
   remaining N = data), so any time stale state sat on the kernel queue
   — common after a state-changing command (light / sleep / time) — the
