@@ -70,7 +70,7 @@ jobs:
           sha256sum *.whl *.tar.gz > "${GITHUB_REPOSITORY##*/}-${VERSION}-SHA256SUMS.txt"
 
       - name: Attest build provenance
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: "dist/*.whl,dist/*.tar.gz"
 
@@ -80,7 +80,7 @@ jobs:
           echo "sbom_path=dist/${GITHUB_REPOSITORY##*/}-${VERSION}-sbom.cdx.json" >> "$GITHUB_ENV"
 
       - name: Attest SBOM (upload)
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: "dist/*.whl"
           sbom-path: "${{ env.sbom_path }}"
